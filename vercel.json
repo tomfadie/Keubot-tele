@@ -3,10 +3,7 @@
   "builds": [
     {
       "src": "main.py",
-      "use": "@vercel/python",
-      "config": {
-        "handler": "telegram_webhook"
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
@@ -18,4 +15,5 @@
   ]
 
 }
+
 
