@@ -222,7 +222,7 @@ async def choose_route(update: Update, context):
         reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
         parse_mode='Markdown'
     )
-    # Pindah dari CHOOSE_CATEGORY ke GET_NOMINAL untuk memilih kategori (Callback)
+    # Pindah dari CHOOSE_CATEGORY ke GET_NOMINAL (Menunggu Callback Kategori)
     return GET_NOMINAL 
 
 async def choose_category(update: Update, context):
@@ -242,17 +242,23 @@ async def choose_category(update: Update, context):
     text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {kategori_nama}*.\n\n"
     text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
     
-    sent_message = await update.callback_query.message.reply_text(
-        text, 
+    # Hapus pesan callback segera
+    await update.callback_query.message.delete()
+    
+    # --- Penundaan Mikro untuk Stabilitas Serverless (Mengatasi Double-tap) ---
+    await asyncio.sleep(0.05) 
+    # -------------------------------------------------------------------------
+    
+    sent_message = await context.bot.send_message(
+        chat_id=update.effective_chat.id, 
+        text=text, 
         reply_markup=get_menu_kembali('kembali_kategori'), 
         parse_mode='Markdown'
     )
-    
-    await update.callback_query.message.delete()
 
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
-    # Pindah dari GET_NOMINAL ke GET_DESCRIPTION untuk input Nominal (Pesan Teks)
+    # Pindah dari GET_NOMINAL ke GET_DESCRIPTION (Menunggu Input Nominal)
     return GET_DESCRIPTION 
 
 async def get_nominal(update: Update, context):
@@ -308,7 +314,7 @@ async def get_nominal(update: Update, context):
     )
     context.user_data['description_request_message_id'] = sent_message.message_id 
     
-    # Pindah dari GET_DESCRIPTION ke PREVIEW untuk input Keterangan (Pesan Teks)
+    # Pindah dari GET_DESCRIPTION ke PREVIEW (Menunggu Input Keterangan)
     return PREVIEW 
 
 async def get_description(update: Update, context):
@@ -373,7 +379,7 @@ async def handle_kembali_actions(update: Update, context):
         )
         context.user_data['description_request_message_id'] = sent_message.message_id
         # Pindah dari PREVIEW kembali ke GET_DESCRIPTION
-        return GET_DESCRIPTION 
+        return PREVIEW 
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -486,7 +492,7 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
-        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan)
+        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan, lalu lanjut ke get_description)
         return PREVIEW 
 
     return PREVIEW
@@ -547,8 +553,8 @@ def init_application():
                 ],
                 
                 PREVIEW: [
-                    # 4. Input Keterangan (Pesan Teks) / Aksi Preview (Callback)
-                    # Handler untuk Input Keterangan (Pesan Teks)
+                    # 4. Input Keterangan (Pesan Teks) -> Handler: get_description. Tetap di PREVIEW
+                    # 4. Aksi Preview (Callback)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description), 
                     # Handler untuk tombol aksi/kembali dari preview
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
@@ -603,18 +609,21 @@ def flask_webhook_handler():
         return 'OK', 200 
         
     except Exception as e:
+        # PENTING: Tangkap dan log NetworkError (RuntimeError) di sini
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
         
     finally:
         # --- SOLUSI KRITIS UNTUK RUNTIMER ERROR ASYNCIO PADA SERVERLESS ---
         # Tutup klien HTTPX secara eksplisit setelah setiap pemrosesan
-        try:
-            # Akses klien melalui jalur Request internal bot
-            # Perbaikan dari .updater ke ._request.client
-            client = application_instance.bot._request.client
-            asyncio.run(client.aclose()) 
-            logging.info("Klien HTTPX berhasil ditutup (Cleanup).")
-        except Exception as e:
-            logging.warning(f"Gagal menutup klien HTTPX: {e}")
+        if application_instance is not None:
+            try:
+                # Akses klien melalui jalur Request internal bot
+                client = application_instance.bot._request.client
+                # Pastikan ini dijalankan di loop yang sama
+                asyncio.run(client.aclose()) 
+                logging.info("Klien HTTPX berhasil ditutup (Cleanup).")
+            except Exception as e:
+                # Ini menangkap error 'tuple' object dan RuntimeError sisa
+                logging.warning(f"Gagal menutup klien HTTPX: {e}")
         # ------------------------------------------------------------------
