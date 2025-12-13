@@ -196,7 +196,7 @@ async def choose_route(update: Update, context):
     
     # --- Defensive Coding: Menjawab Query ---
     try:
-        await query.answer()
+        await query.answer() # <--- GAGAL DI SINI
     except Exception as e:
         logging.warning(f"Gagal menjawab query di choose_route: {e}")
     # ---------------------------------------
@@ -654,6 +654,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
