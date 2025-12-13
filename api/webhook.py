@@ -564,3 +564,58 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
+    """Fungsi handler Vercel/Flask. Pola Loop Baru per Request + Policy."""
+    
+    global application_instance
+    
+    # 1. Lazy Loading/Re-initialization
+    if application_instance is None:
+        application_instance = init_application()
+    
+    if application_instance is None:
+        logging.error("Application instance tidak ditemukan.")
+        return 'Internal Server Error', 500
+        
+    try:
+        data = flask_request.get_json(force=True)
+    except Exception as e:
+        logging.error(f"Gagal parsing JSON request dari Telegram (Flask): {e}")
+        return 'Bad Request', 400
+
+    try:
+        update = Update.de_json(data, application_instance.bot)
+        
+        # --- POLA EVENT LOOP AMAN UNTUK SERVERLESS ---
+        
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        
+        # Inisialisasi Kondisional (Mengatasi "Application was not initialized")
+        # Menggunakan atribut internal _initialized (atau set flag Anda sendiri)
+        if not hasattr(application_instance, '_initialized') or not application_instance._initialized:
+            
+            # Panggil initialize di loop baru pada request pertama
+            new_loop.run_until_complete(application_instance.initialize())
+            
+            # Set flag agar tidak dipanggil lagi
+            application_instance._initialized = True 
+            logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
+            
+        # Jalankan pemrosesan update di loop baru
+        new_loop.run_until_complete(application_instance.process_update(update)) 
+        
+        # Tutup loop setelah selesai
+        new_loop.close()
+        asyncio.set_event_loop(None) # Bersihkan loop
+        # ------------------------------------------------------
+
+        logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
+        return 'OK', 200 
+        
+    except Exception as e:
+        # Bersihkan loop saat error
+        asyncio.set_event_loop(None) 
+        
+        logging.error(f"Error saat memproses Update: {e}")
+        return 'Internal Server Error', 500
