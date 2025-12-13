@@ -118,11 +118,9 @@ def get_menu_kembali(callback_data):
 # --- HANDLERS UTAMA ---
 
 async def start(update: Update, context):
-    """Memulai Conversation Handler dan menampilkan menu utama."""
+    """Memulai Conversation Handler dan menampilkan menu utama. Kritis untuk stabilitas respons."""
     
-    # --- LOGGING KRITIS ---
     logging.info(f"Handler 'start' Dipanggil oleh User: {update.effective_user.id}")
-    # -----------------------
     
     user = update.effective_user
     chat_id = update.effective_chat.id
@@ -138,9 +136,8 @@ async def start(update: Update, context):
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
-    # KOREKSI PENTING: Pengiriman Pesan yang Stabil menggunakan effective_chat.id
+    # KOREKSI PENTING: Menggunakan effective_chat.id untuk pengiriman pesan yang stabil
     try:
-        # Selalu gunakan send_message ke chat ID untuk pesan awal /start
         await context.bot.send_message(
             chat_id=chat_id, 
             text=text, 
@@ -148,10 +145,9 @@ async def start(update: Update, context):
         )
         logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
         
-        # Jawab callback query jika dipanggil oleh tombol (seperti "Ubah Transaksi")
+        # Jawab callback query dan hapus pesan lama jika dipanggil oleh tombol
         if update.callback_query:
              await update.callback_query.answer()
-             # Hapus pesan tombol yang lama
              try:
                  await update.callback_query.message.delete()
              except Exception:
@@ -160,7 +156,7 @@ async def start(update: Update, context):
     except Exception as e:
         logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
         
-    # Hapus pesan /start user (opsional, untuk kerapihan)
+    # Hapus pesan /start user (untuk kerapihan)
     if update.message:
         try:
             await update.message.delete()
@@ -418,7 +414,7 @@ async def handle_preview_actions(update: Update, context):
     return PREVIEW
 
 
-# --- FUNGSI ENTRY POINT VERCEL (SOLUSI FLASK) ---
+# --- FUNGSI ENTRY POINT VERCEL (SOLUSI FLASK KRITIS) ---
 
 def init_application():
     """Menginisialisasi Application dan Conversation Handler."""
@@ -458,7 +454,7 @@ def init_application():
         logging.error(f"Error saat inisialisasi Application: {e}")
         return None
 
-# PENTING: Inisialisasi Application secara global (diperlukan saat menggunakan Flask)
+# PENTING: Inisialisasi Application global sebelum Flask dimulai
 application_instance = init_application()
 
 # Inisialisasi Flask App (Entry Point Utama)
