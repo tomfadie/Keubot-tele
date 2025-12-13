@@ -391,7 +391,7 @@ async def handle_preview_actions(update: Update, context):
         # 4. Clear data sementara
         context.user_data.clear()
         
-        # 5. AKHIRI PERCAKAPAN (Mencegah Menu Awal Muncul)
+        # 5. AKHIRI PERCAKAPAN 
         return ConversationHandler.END
         
     elif action == 'ubah_transaksi':
@@ -463,11 +463,11 @@ def init_application():
         # KRITIS: Panggil initialize menggunakan asyncio.run()
         asyncio.run(application.initialize())
 
-        # --- CONVERSATION HANDLER (Perbaikan Routing) ---
+        # --- CONVERSATION HANDLER (Perubahan KRITIS di entry_points & fallbacks) ---
         conv_handler = ConversationHandler(
             entry_points=[
+                # Hanya Command /start yang akan memulai percakapan
                 CommandHandler("start", start),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
             ],
             states={
                 CHOOSE_CATEGORY: [
@@ -479,11 +479,13 @@ def init_application():
                 ],
                 
                 GET_DESCRIPTION: [
+                    # Handler Nominal (Input Teks)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                 ],
                 
                 PREVIEW: [
+                    # Handler Keterangan (Input Teks)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
@@ -491,7 +493,8 @@ def init_application():
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
+                # DIHAPUS: MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
+                # -> Teks tak terduga sekarang akan diabaikan/direspon sebagai 'unknown update', bukan kembali ke /start
             ],
             per_user=True,
             per_chat=True,
