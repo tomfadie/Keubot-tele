@@ -380,7 +380,7 @@ async def handle_preview_actions(update: Update, context):
             response_text += ringkasan_data
             
             # --- PENAMBAHAN URL HYPERLINK Laporan ---
-            response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://bit.ly/LapKeuTracker)"
+            response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://docs.google.com/spreadsheets/d/1A2ephAX4I1zwxmvFlkSAeHRc7OjcN2peQqZgPsGZ8X8/edit?gid=550879818#gid=550879818)"
             # ----------------------------------------
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
@@ -542,4 +542,5 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
