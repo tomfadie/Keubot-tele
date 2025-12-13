@@ -130,7 +130,6 @@ async def delete_message_job(context):
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         logging.info(f"Pesan menu ID {message_id} di chat {chat_id} berhasil dihapus (Timeout).")
     except Exception as e:
-        # Jika pesan sudah dihapus oleh pengguna/sistem lain, tidak perlu error
         logging.warning(f"Gagal menghapus pesan menu ID {message_id}: {e}")
 
 # --- HANDLERS UTAMA (Semua fungsi async) ---
@@ -223,6 +222,7 @@ async def choose_route(update: Update, context):
         reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
         parse_mode='Markdown'
     )
+    # Pindah dari CHOOSE_CATEGORY ke GET_NOMINAL untuk memilih kategori (Callback)
     return GET_NOMINAL 
 
 async def choose_category(update: Update, context):
@@ -231,6 +231,7 @@ async def choose_category(update: Update, context):
     data = query.data
     
     if data == 'kembali_transaksi':
+        # Kembali ke Menu Transaksi (State CHOOSE_CATEGORY)
         return await start(update, context) 
     
     kategori_dict = context.user_data.get('kategori_dict', {})
@@ -251,12 +252,15 @@ async def choose_category(update: Update, context):
 
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
+    # Pindah dari GET_NOMINAL ke GET_DESCRIPTION untuk input Nominal (Pesan Teks)
     return GET_DESCRIPTION 
 
 async def get_nominal(update: Update, context):
+    # Dipanggil saat user mengirim pesan teks berupa nominal
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
+    # Cleanup pesan error nominal sebelumnya
     error_message_id = context.user_data.pop('error_message_id', None)
     if error_message_id:
         try:
@@ -280,6 +284,7 @@ async def get_nominal(update: Update, context):
         )
         context.user_data['error_message_id'] = error_msg.message_id
         
+        # Tetap di state GET_DESCRIPTION jika gagal, menunggu input ulang
         return GET_DESCRIPTION 
 
     await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
@@ -303,9 +308,11 @@ async def get_nominal(update: Update, context):
     )
     context.user_data['description_request_message_id'] = sent_message.message_id 
     
+    # Pindah dari GET_DESCRIPTION ke PREVIEW untuk input Keterangan (Pesan Teks)
     return PREVIEW 
 
 async def get_description(update: Update, context):
+    # Dipanggil saat user mengirim pesan teks berupa keterangan
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     bot_message_to_delete_id = context.user_data.pop('description_request_message_id', None)
@@ -328,6 +335,7 @@ async def get_description(update: Update, context):
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
+    # Tetap di state PREVIEW untuk menunggu aksi kirim/ubah
     return PREVIEW 
 
 async def handle_kembali_actions(update: Update, context):
@@ -339,6 +347,7 @@ async def handle_kembali_actions(update: Update, context):
     await query.message.delete()
     
     if action == 'kembali_kategori':
+        # Kembali dari input Nominal ke Pilih Kategori (State GET_NOMINAL)
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -348,9 +357,11 @@ async def handle_kembali_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi), 
             parse_mode='Markdown'
         )
+        # Pindah dari GET_DESCRIPTION kembali ke GET_NOMINAL
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
+        # Kembali dari input Keterangan ke input Nominal (State GET_DESCRIPTION)
         text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
         text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
         
@@ -361,7 +372,8 @@ async def handle_kembali_actions(update: Update, context):
             parse_mode='Markdown'
         )
         context.user_data['description_request_message_id'] = sent_message.message_id
-        return PREVIEW 
+        # Pindah dari PREVIEW kembali ke GET_DESCRIPTION
+        return GET_DESCRIPTION 
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -428,13 +440,15 @@ async def handle_preview_actions(update: Update, context):
         logging.info(f"Job penghapusan pesan ID {sent_menu.message_id} dijadwalkan dalam 120 detik.")
         # ------------------------------------------------------------------
         
-        # Kembalikan state ke CHOOSE_CATEGORY
+        # Pindah dari PREVIEW kembali ke CHOOSE_CATEGORY
         return CHOOSE_CATEGORY
         
     elif action == 'ubah_transaksi':
+        # Ubah Transaksi -> Kembali ke /start
         return await start(update, context)
         
     elif action == 'ubah_kategori':
+        # Ubah Kategori -> Kembali ke Pilih Kategori
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -444,9 +458,11 @@ async def handle_preview_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
+        # Pindah dari PREVIEW kembali ke GET_NOMINAL (Pilih Kategori)
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
+        # Ubah Nominal -> Kembali ke Input Nominal
         context.user_data.pop('nominal', None) 
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
@@ -458,9 +474,11 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_kategori'), 
              parse_mode='Markdown'
          )
+        # Pindah dari PREVIEW kembali ke GET_DESCRIPTION (Input Nominal)
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
+        # Ubah Keterangan -> Kembali ke Input Keterangan
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
@@ -468,6 +486,7 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
+        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan)
         return PREVIEW 
 
     return PREVIEW
@@ -495,7 +514,6 @@ def init_application():
         return None
 
     try:
-        # Hapus Job Queue Warning yang tidak relevan di Serverless
         application = Application.builder().token(TOKEN).build()
         
         asyncio.run(application.initialize())
@@ -507,32 +525,42 @@ def init_application():
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler("start", start),
-                auto_start_handler # Tambah: Auto-start
+                auto_start_handler 
             ],
             states={
-                CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
+                CHOOSE_CATEGORY: [
+                    # 1. Pilih jenis transaksi (Masuk/Keluar/Tabungan) -> Handler: choose_route. Pindah ke GET_NOMINAL
+                    CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
+                ],
                 
                 GET_NOMINAL: [
+                    # 2. Pilih kategori (Callback) -> Handler: choose_category. Pindah ke GET_DESCRIPTION
+                    # Handler ini juga menangani tombol kembali ke Menu Transaksi
                     CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
                 ],
                 
                 GET_DESCRIPTION: [
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal)
+                    # 3. Input Nominal (Pesan Teks) -> Handler: get_nominal. Pindah ke PREVIEW
+                    # Handler ini juga menangani tombol kembali ke Pilih Kategori
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                 ],
+                
                 PREVIEW: [
+                    # 4. Input Keterangan (Pesan Teks) / Aksi Preview (Callback)
+                    # Handler untuk Input Keterangan (Pesan Teks)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description), 
+                    # Handler untuk tombol aksi/kembali dari preview
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)
                 ]
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                auto_start_handler # Tambah: Auto-start saat state jatuh
+                auto_start_handler
             ],
             per_user=True,
             per_chat=True,
-            # Hapus per_message=True untuk menghindari konflik Handler
             allow_reentry=True
         )
 
@@ -583,6 +611,7 @@ def flask_webhook_handler():
         # Tutup klien HTTPX secara eksplisit setelah setiap pemrosesan
         try:
             # Akses klien melalui jalur Request internal bot
+            # Perbaikan dari .updater ke ._request.client
             client = application_instance.bot._request.client
             asyncio.run(client.aclose()) 
             logging.info("Klien HTTPX berhasil ditutup (Cleanup).")
