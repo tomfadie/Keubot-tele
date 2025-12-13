@@ -47,7 +47,7 @@ KATEGORI_KELUAR = {
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
-# --- FUNGSI UTILITY ---
+# --- FUNGSI UTILITY (Tidak Berubah) ---
 
 def send_to_make(data):
     """Mengirim payload data ke webhook Make."""
@@ -115,7 +115,7 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS UTAMA ---
+# --- HANDLERS UTAMA (Tidak Berubah Logika) ---
 
 async def start(update: Update, context):
     
@@ -162,7 +162,7 @@ async def start(update: Update, context):
         except Exception:
             pass
             
-    return CHOOSE_TRANSACTION # State pertama setelah /start
+    return CHOOSE_TRANSACTION 
 
 async def cancel(update: Update, context):
     if update.message:
@@ -185,13 +185,11 @@ async def choose_route(update: Update, context):
     data = query.data
     chat_id = query.message.chat_id
     
-    # --- Logging dan Jawaban Query ---
     try:
         await query.answer()
         logging.info(f"[{data}] Callback Query dijawab.")
     except Exception as e:
         logging.warning(f"[{data}] Gagal menjawab query: {e}")
-    # ----------------------------------
     
     if data == 'transaksi_masuk':
         context.user_data['transaksi'] = 'Masuk' 
@@ -236,7 +234,7 @@ async def choose_route(update: Update, context):
         )
         
     logging.info(f"[{data}] Pindah state ke CHOOSE_CATEGORY.")
-    return CHOOSE_CATEGORY # State berikutnya
+    return CHOOSE_CATEGORY 
 
 async def choose_category(update: Update, context):
     query = update.callback_query
@@ -265,13 +263,12 @@ async def choose_category(update: Update, context):
             parse_mode='Markdown'
         )
         await update.callback_query.message.delete()
-        # --- PENTING: Simpan ID pesan bot yang meminta nominal ---
         context.user_data['nominal_request_message_id'] = sent_message.message_id
     except Exception as e:
         logging.error(f"Gagal mengirim/menghapus pesan di choose_category: {e}")
         context.user_data['nominal_request_message_id'] = None
 
-    return GET_NOMINAL # State berikutnya
+    return GET_NOMINAL 
 
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
@@ -322,10 +319,9 @@ async def get_nominal(update: Update, context):
         reply_markup=get_menu_kembali('kembali_nominal'), 
         parse_mode='Markdown'
     )
-    # --- PENTING: Simpan ID pesan bot untuk dihapus di state berikutnya ---
     context.user_data['description_request_message_id'] = sent_message.message_id 
     
-    return GET_DESCRIPTION # State berikutnya
+    return GET_DESCRIPTION 
 
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
@@ -374,7 +370,7 @@ async def handle_kembali_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi), 
             parse_mode='Markdown'
         )
-        return CHOOSE_CATEGORY # Kembali ke state kategori
+        return CHOOSE_CATEGORY 
 
     elif action == 'kembali_nominal':
         
@@ -384,19 +380,18 @@ async def handle_kembali_actions(update: Update, context):
         sent_message = await context.bot.send_message(
             chat_id=chat_id,
             text=text,
-            reply_markup=get_menu_kembali('kembali_kategori'), # Kembali ke state kategori jika dibatalkan
+            reply_markup=get_menu_kembali('kembali_kategori'), 
             parse_mode='Markdown'
         )
-        # Simpan ID pesan bot baru untuk permintaan nominal
         context.user_data['nominal_request_message_id'] = sent_message.message_id
-        return GET_NOMINAL # Kembali ke state input nominal
+        return GET_NOMINAL 
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
     
     try:
         await query.answer()
-        # Penghapusan Pesan Review (Poin 4)
+        # Penghapusan Pesan Review
         await query.message.delete() 
     except Exception:
         pass
@@ -471,7 +466,6 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_kategori'), 
              parse_mode='Markdown'
          )
-        # Simpan ID pesan bot baru untuk permintaan nominal
         context.user_data['nominal_request_message_id'] = sent_message.message_id
         return GET_NOMINAL 
 
@@ -484,7 +478,6 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
-        # Simpan ID pesan bot baru untuk permintaan keterangan
         context.user_data['description_request_message_id'] = sent_message.message_id
         return GET_DESCRIPTION 
 
@@ -517,25 +510,25 @@ def init_application():
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start)],
             states={
-                CHOOSE_TRANSACTION: [ # State 0: Memilih Masuk/Keluar/Tabungan
+                CHOOSE_TRANSACTION: [ 
                     CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
                 ],
                 
-                CHOOSE_CATEGORY: [ # State 1: Memilih Kategori
+                CHOOSE_CATEGORY: [ 
                     CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')
                 ],
                 
-                GET_NOMINAL: [ # State 2: Memasukkan Nominal
+                GET_NOMINAL: [ 
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
                 ],
                 
-                GET_DESCRIPTION: [ # State 3: Memasukkan Deskripsi
+                GET_DESCRIPTION: [ 
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
                 ],
 
-                PREVIEW: [ # State 4: Review
+                PREVIEW: [ 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                 ]
             },
@@ -575,18 +568,22 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, current_application_instance.bot)
         
-        # --- Tambahan Logging untuk Debugging Callback Query (seperti permintaan Anda) ---
         if update.callback_query:
             logging.info(f"CallbackQuery DITERIMA. Data: {update.callback_query.data}")
-        # --------------------------------------------------------------------------------
         
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        if not current_application_instance.initialized:
-            new_loop.run_until_complete(current_application_instance.initialize())
-            
+        # --- PERBAIKAN KRITIS: Hanya panggil initialize/post_init di loop baru ---
+        # Ini mengatasi AttributeError: 'Application' object has no attribute 'initialized'
+        # dan memastikan PTB disiapkan untuk setiap request serverless.
+        
+        new_loop.run_until_complete(current_application_instance.initialize())
+        new_loop.run_until_complete(current_application_instance.post_init())
+        
+        # ------------------------------------------------------------------------
+        
         new_loop.run_until_complete(current_application_instance.process_update(update)) 
         
         new_loop.close()
