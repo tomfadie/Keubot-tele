@@ -76,6 +76,20 @@ def generate_preview(user_data):
     preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
     return preview_text
 
+# FUNGSI DEBUGGING BARU
+def debug_check_ids(context):
+    """Mencetak ID pesan yang seharusnya dihapus untuk debugging."""
+    chat_id = context._chat_id # ID Chat
+    nominal_id = context.user_data.get('nominal_request_message_id')
+    
+    # Cek ID Pesan Bot yang Minta Nominal
+    if nominal_id:
+        logging.info(f"DEBUG: nominal_request_message_id = {nominal_id} (Chat: {chat_id}). ID siap dihapus.")
+    else:
+        logging.warning(f"DEBUG: nominal_request_message_id TIDAK DITEMUKAN atau None.")
+    return nominal_id
+# END FUNGSI DEBUGGING
+
 def get_menu_transaksi():
     keyboard = [
         [InlineKeyboardButton("✅ Masuk", callback_data='transaksi_masuk')],
@@ -170,9 +184,9 @@ async def cancel(update: Update, context):
             await update.callback_query.edit_message_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
         except Exception:
              await context.bot.send_message(
-                chat_id=update.effective_chat.id, 
-                text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
-            )
+                 chat_id=update.effective_chat.id, 
+                 text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
+             )
     
     context.user_data.clear()
     return ConversationHandler.END
@@ -263,6 +277,10 @@ async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
+    # --- PANGGILAN FUNGSI DEBUG UNTUK VERIFIKASI ID ---
+    debug_check_ids(context) 
+    # --------------------------------------------------
+
     error_message_id = context.user_data.pop('error_message_id', None)
     if error_message_id:
         try:
@@ -448,7 +466,7 @@ async def handle_preview_actions(update: Update, context):
              text,
              reply_markup=get_menu_kembali('kembali_kategori'), 
              parse_mode='Markdown'
-         )
+           )
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
@@ -458,7 +476,7 @@ async def handle_preview_actions(update: Update, context):
              "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
-         )
+           )
         return PREVIEW 
 
     return PREVIEW
