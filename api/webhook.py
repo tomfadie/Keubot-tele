@@ -118,6 +118,21 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- FUNGSI JOB QUEUE ---
+
+async def delete_message_job(context):
+    """Menghapus pesan menu setelah 2 menit."""
+    job = context.job
+    chat_id = job.data.get('chat_id')
+    message_id = job.data.get('message_id')
+    
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logging.info(f"Pesan menu ID {message_id} di chat {chat_id} berhasil dihapus (Timeout).")
+    except Exception as e:
+        # Jika pesan sudah dihapus oleh pengguna/sistem lain, tidak perlu error
+        logging.warning(f"Gagal menghapus pesan menu ID {message_id}: {e}")
+
 # --- HANDLERS UTAMA (Semua fungsi async) ---
 
 async def start(update: Update, context):
@@ -146,15 +161,14 @@ async def start(update: Update, context):
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # --- PENJADWALAN PENGHAPUSAN PESAN (2 MENIT) ---
-            # Catatan: Fitur ini hanya berfungsi jika Vercel tetap 'warm' selama 2 menit.
-            # Jika bot mati/tidur, job tidak akan dieksekusi.
-            # context.application.job_queue.run_once(
-            #     delete_message_job, 
-            #     120, 
-            #     data={'chat_id': chat_id, 'message_id': sent_message.message_id}
-            # )
-            # -----------------------------------------------
+            # --- PENJADWALAN PENGHAPUSAN PESAN (2 MENIT = 120 detik) ---
+            context.application.job_queue.run_once(
+                 delete_message_job, 
+                 120, 
+                 data={'chat_id': chat_id, 'message_id': sent_message.message_id}
+             )
+            logging.info(f"Job penghapusan pesan ID {sent_message.message_id} dijadwalkan dalam 120 detik.")
+            # -----------------------------------------------------------
 
             if update.callback_query:
                  await update.callback_query.answer()
@@ -399,11 +413,20 @@ async def handle_preview_actions(update: Update, context):
         
         # 5. Tampilkan Menu Awal Kembali
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-        await context.bot.send_message( 
+        sent_menu = await context.bot.send_message( 
             chat_id=chat_id, 
             text=text_menu, 
             reply_markup=get_menu_transaksi()
         )
+        
+        # --- LOGIKA PENJADWALAN PENGHAPUSAN PESAN (2 Menit = 120 detik) ---
+        context.application.job_queue.run_once(
+            delete_message_job, 
+            120, 
+            data={'chat_id': chat_id, 'message_id': sent_menu.message_id}
+        )
+        logging.info(f"Job penghapusan pesan ID {sent_menu.message_id} dijadwalkan dalam 120 detik.")
+        # ------------------------------------------------------------------
         
         # Kembalikan state ke CHOOSE_CATEGORY
         return CHOOSE_CATEGORY
@@ -472,13 +495,15 @@ def init_application():
         return None
 
     try:
+        # Hapus Job Queue Warning yang tidak relevan di Serverless
         application = Application.builder().token(TOKEN).build()
         
         asyncio.run(application.initialize())
 
-        # --- Tambahkan handler auto-start untuk entry point dan fallback ---
+        # 1. Tentukan Entry Handler untuk Pesan Teks Apa Pun (Auto-Start)
         auto_start_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, start)
-        
+
+        # 2. Inisialisasi Conversation Handler
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler("start", start),
@@ -503,11 +528,11 @@ def init_application():
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                auto_start_handler # Tambah: Auto-start
+                auto_start_handler # Tambah: Auto-start saat state jatuh
             ],
             per_user=True,
             per_chat=True,
-            per_message=True, # Hilangkan PTBUserWarning
+            # Hapus per_message=True untuk menghindari konflik Handler
             allow_reentry=True
         )
 
@@ -550,7 +575,6 @@ def flask_webhook_handler():
         return 'OK', 200 
         
     except Exception as e:
-        # Menangkap error lain, termasuk NetworkError dari konflik loop
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
         
@@ -558,11 +582,10 @@ def flask_webhook_handler():
         # --- SOLUSI KRITIS UNTUK RUNTIMER ERROR ASYNCIO PADA SERVERLESS ---
         # Tutup klien HTTPX secara eksplisit setelah setiap pemrosesan
         try:
-            client = application_instance.bot.updater.http_request.client
-            # Jalankan aclose() secara async
+            # Akses klien melalui jalur Request internal bot
+            client = application_instance.bot._request.client
             asyncio.run(client.aclose()) 
             logging.info("Klien HTTPX berhasil ditutup (Cleanup).")
         except Exception as e:
-            # Ini mungkin terjadi jika klien sudah ditutup atau loop mati
             logging.warning(f"Gagal menutup klien HTTPX: {e}")
         # ------------------------------------------------------------------
