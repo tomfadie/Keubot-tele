@@ -502,7 +502,8 @@ def init_application():
             entry_points=[CommandHandler("start", start)],
             states={
                 SELECT_TRANSACTION: [
-                    CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
+                    # PERUBAHAN KRITIS: Hapus pattern untuk Catch-All Test
+                    CallbackQueryHandler(choose_route) 
                 ],
                 
                 SELECT_CATEGORY: [
@@ -581,3 +582,4 @@ def flask_webhook_handler():
         asyncio.set_event_loop(None) 
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
