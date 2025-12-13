@@ -362,15 +362,14 @@ async def handle_preview_actions(update: Update, context):
             'keterangan': context.user_data.get('keterangan'),
         }
         
-        # --- PERBAIKAN KRITIS UNTUK USERNAME (Memastikan nilainya bersih) ---
+        # PERBAIKAN USERNAME (sudah ada sebelum request rollback ini)
         current_username = payload.get('username')
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
-        # ------------------------------------------------------------------
         
         success = send_to_make(payload)
         
-        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data
+        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data (sudah ada sebelum request rollback ini)
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
         kategori_nama = payload.get('kategori_nama', 'N/A')
@@ -445,6 +444,12 @@ async def handle_preview_actions(update: Update, context):
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
+# Terapkan patch nest_asyncio di luar handler
+try:
+    nest_asyncio.apply()
+except RuntimeError:
+    pass 
+
 # Inisialisasi Flask App (Vercel akan mencari instance 'app')
 app = Flask(__name__)
 
@@ -504,13 +509,7 @@ def init_application():
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask."""
     
-    # --- Perbaikan KRITIS untuk Event Loop/Network Error ---
-    # Memastikan patch diterapkan pada event loop thread saat ini sebelum asyncio.run dipanggil
-    try:
-        nest_asyncio.apply()
-    except Exception:
-        pass
-    # -------------------------------------------------------
+    # !!! PERHATIKAN: nest_asyncio.apply() TIDAK DIPINDAHKAN DI SINI, sesuai permintaan rollback.
     
     global application_instance
     
