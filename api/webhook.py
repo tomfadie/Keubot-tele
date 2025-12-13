@@ -296,8 +296,12 @@ async def get_nominal(update: Update, context):
         if nominal <= 0:
             raise ValueError
     except (ValueError, TypeError):
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
-        
+        # Hapus pesan user yang salah
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        except Exception:
+            pass
+            
         error_msg = await update.message.reply_text(
             "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
             parse_mode='Markdown'
@@ -306,13 +310,28 @@ async def get_nominal(update: Update, context):
         
         return GET_DESCRIPTION 
 
+    # --- PERBAIKAN: Pisahkan blok penghapusan untuk keandalan ---
+
+    # 1. Hapus pesan User (Input Nominal yang Valid)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
-        if bot_message_to_delete_id:
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
+        pass
+        
+    # 2. Hapus pesan Bot Lama (Permintaan Nominal)
+    if bot_message_to_delete_id:
+        try:
             await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
             context.user_data.pop('nominal_request_message_id', None)
-    except Exception:
-        pass
+            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
+            context.user_data.pop('nominal_request_message_id', None)
+            pass
+    
+    # ------------------------------------------------------------
     
     context.user_data['nominal'] = nominal
     
@@ -326,7 +345,7 @@ async def get_nominal(update: Update, context):
     )
     context.user_data['description_request_message_id'] = sent_message.message_id 
     
-    return PREVIEW 
+    return PREVIEW
 
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
@@ -606,3 +625,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
