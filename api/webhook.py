@@ -156,7 +156,6 @@ async def start(update: Update, context):
         except Exception as e:
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
-    # Hapus pesan /start dari user agar bersih
     if update.message:
         try:
             await update.message.delete()
@@ -434,8 +433,9 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # KRITIS: Panggil initialize secara eksplisit untuk lingkungan webhook/serverless
-        application.initialize() 
+        # KRITIS: Panggil initialize menggunakan asyncio.run() karena ia adalah coroutine.
+        # Ini mengatasi: RuntimeWarning: coroutine 'Application.initialize' was never awaited
+        asyncio.run(application.initialize())
 
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start)],
