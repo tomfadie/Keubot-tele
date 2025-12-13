@@ -25,7 +25,7 @@ if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
 # URL Webhook Make Anda (Pastikan ini benar)
-MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96"
+MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
 
 # Konfigurasi logging
 logging.basicConfig(
@@ -382,6 +382,7 @@ async def handle_preview_actions(update: Update, context):
             # --- PENAMBAHAN URL HYPERLINK Laporan ---
             response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://docs.google.com/spreadsheets/d/1A2ephAX4I1zwxmvFlkSAeHRc7OjcN2peQqZgPsGZ8X8/edit?gid=550879818#gid=550879818)"
             # ----------------------------------------
+            
             # --- PENAMBAHAN INSTRUKSI START BARU ---
             response_text += "\n\nJika ingin melakukan pencatatan baru silahkan tekan /start"
             # ----------------------------------------
@@ -463,13 +464,14 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # KRITIS: Panggil initialize menggunakan asyncio.run()
-        asyncio.run(application.initialize())
+        # --- PERBAIKAN 1: Inisialisasi loop untuk Application ---
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application.initialize())
+        # ----------------------------------------------------
 
-        # --- CONVERSATION HANDLER (Perubahan KRITIS di entry_points & fallbacks) ---
+        # --- CONVERSATION HANDLER ---
         conv_handler = ConversationHandler(
             entry_points=[
-                # Hanya Command /start yang akan memulai percakapan
                 CommandHandler("start", start),
             ],
             states={
@@ -482,13 +484,11 @@ def init_application():
                 ],
                 
                 GET_DESCRIPTION: [
-                    # Handler Nominal (Input Teks)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                 ],
                 
                 PREVIEW: [
-                    # Handler Keterangan (Input Teks)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
@@ -496,8 +496,6 @@ def init_application():
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                # DIHAPUS: MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
-                # -> Teks tak terduga sekarang akan diabaikan/direspon sebagai 'unknown update', bukan kembali ke /start
             ],
             per_user=True,
             per_chat=True,
@@ -536,8 +534,11 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, application_instance.bot)
         
-        # KRITIS: Menggunakan asyncio.run untuk menjamin eksekusi async PTB selesai
-        asyncio.run(application_instance.process_update(update)) 
+        # --- PERBAIKAN 2: Menggunakan loop.run_until_complete ---
+        # Menjalankan fungsi asinkron di thread sinkron yang dipicu oleh Vercel
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application_instance.process_update(update)) 
+        # -----------------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 
@@ -545,6 +546,3 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-
-
-
