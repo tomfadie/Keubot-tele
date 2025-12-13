@@ -491,7 +491,12 @@ async def handle_preview_actions(update: Update, context):
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
-        await context.bot.send_message(chat_id, response_text, parse_mode='Markdown')
+        await context.bot.send_message(
+    chat_id, 
+    response_text, 
+    parse_mode='Markdown', 
+    disable_web_page_preview=True
+)
         
         context.user_data.clear()
         
@@ -666,6 +671,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
