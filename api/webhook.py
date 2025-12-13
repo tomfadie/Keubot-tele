@@ -148,26 +148,40 @@ async def start(update: Update, context):
     
     if update.message or update.callback_query:
         try:
-            # ---> DITAMBAH INDENTASI DI SINI (Baris 151)
-            await context.bot.send_message(
+            # 1. Coba Kirim Menu Utama (Paling Rentan)
+            menu_message = await context.bot.send_message(
                 chat_id=chat_id, 
                 text=text, 
                 reply_markup=get_menu_transaksi()
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # ---> DITAMBAH INDENTASI DI SINI (untuk blok if update.callback_query)
+            # 2. Penanganan Query Lama
             if update.callback_query:
                  try:
                      await update.callback_query.answer() 
                      await update.callback_query.message.delete()
                  except Exception:
-                     # Menangkap error saat menjawab query atau menghapus pesan lama
                      pass
 
         except Exception as e:
+            # 3. KETIKA GAGAL KARENA RuntimeError (Cold Start)
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
+            # --- FALLBACK: Mengirim Pesan Sederhana ---
+            # Ini mungkin berhasil karena operasi ini jauh lebih sederhana
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text="🤖 *Menu gagal dimuat.* Silakan tekan `/start` lagi untuk membuka menu.",
+                    parse_mode='Markdown'
+                )
+                logging.warning("Pesan fallback instruksi start berhasil dikirim.")
+            except Exception as fe:
+                logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
+            # ------------------------------------------
+
+    # 4. Hapus pesan /start user
     if update.message:
         try:
             await update.message.delete()
@@ -653,6 +667,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
