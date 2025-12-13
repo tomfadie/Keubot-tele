@@ -199,7 +199,6 @@ async def choose_route(update: Update, context):
         reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
         parse_mode='Markdown'
     )
-    # Pindah dari CHOOSE_CATEGORY ke GET_NOMINAL (Menunggu Callback Kategori)
     return GET_NOMINAL 
 
 async def choose_category(update: Update, context):
@@ -229,15 +228,12 @@ async def choose_category(update: Update, context):
 
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
-    # Pindah dari GET_NOMINAL ke GET_DESCRIPTION (Menunggu Input Nominal)
     return GET_DESCRIPTION 
 
 async def get_nominal(update: Update, context):
-    # Dipanggil saat user mengirim pesan teks berupa nominal (State GET_DESCRIPTION)
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
-    # Cleanup pesan error nominal sebelumnya
     error_message_id = context.user_data.pop('error_message_id', None)
     if error_message_id:
         try:
@@ -261,7 +257,6 @@ async def get_nominal(update: Update, context):
         )
         context.user_data['error_message_id'] = error_msg.message_id
         
-        # Tetap di state GET_DESCRIPTION jika gagal, menunggu input ulang
         return GET_DESCRIPTION 
 
     await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
@@ -285,11 +280,9 @@ async def get_nominal(update: Update, context):
     )
     context.user_data['description_request_message_id'] = sent_message.message_id 
     
-    # Pindah dari GET_DESCRIPTION ke PREVIEW (Menunggu Input Keterangan)
     return PREVIEW 
 
 async def get_description(update: Update, context):
-    # Dipanggil saat user mengirim pesan teks berupa keterangan (State PREVIEW)
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     bot_message_to_delete_id = context.user_data.pop('description_request_message_id', None)
@@ -312,7 +305,6 @@ async def get_description(update: Update, context):
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
-    # Tetap di state PREVIEW untuk menunggu aksi kirim/ubah
     return PREVIEW 
 
 async def handle_kembali_actions(update: Update, context):
@@ -324,7 +316,6 @@ async def handle_kembali_actions(update: Update, context):
     await query.message.delete()
     
     if action == 'kembali_kategori':
-        # Kembali dari input Nominal ke Pilih Kategori (State GET_NOMINAL)
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -334,11 +325,9 @@ async def handle_kembali_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi), 
             parse_mode='Markdown'
         )
-        # Pindah dari GET_DESCRIPTION kembali ke GET_NOMINAL
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
-        # Kembali dari preview ke input Keterangan (State PREVIEW)
         text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
         text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
         
@@ -349,7 +338,6 @@ async def handle_kembali_actions(update: Update, context):
             parse_mode='Markdown'
         )
         context.user_data['description_request_message_id'] = sent_message.message_id
-        # Tetap di state PREVIEW, menunggu input teks
         return PREVIEW 
 
 async def handle_preview_actions(update: Update, context):
@@ -374,13 +362,14 @@ async def handle_preview_actions(update: Update, context):
             'keterangan': context.user_data.get('keterangan'),
         }
         
+        # PERBAIKAN USERNAME (sudah ada sebelum request rollback ini)
         current_username = payload.get('username')
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
         success = send_to_make(payload)
         
-        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data
+        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data (sudah ada sebelum request rollback ini)
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
         kategori_nama = payload.get('kategori_nama', 'N/A')
@@ -402,21 +391,19 @@ async def handle_preview_actions(update: Update, context):
         
         # 5. Tampilkan Menu Awal Kembali
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-        await context.bot.send_message( 
+        await context.bot.send_message(
             chat_id=chat_id, 
             text=text_menu, 
             reply_markup=get_menu_transaksi()
         )
         
-        # Pindah dari PREVIEW kembali ke CHOOSE_CATEGORY
+        # Kembalikan state ke CHOOSE_CATEGORY
         return CHOOSE_CATEGORY
         
     elif action == 'ubah_transaksi':
-        # Ubah Transaksi -> Kembali ke /start
         return await start(update, context)
         
     elif action == 'ubah_kategori':
-        # Ubah Kategori -> Kembali ke Pilih Kategori
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -426,11 +413,9 @@ async def handle_preview_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
-        # Pindah dari PREVIEW kembali ke GET_NOMINAL (Pilih Kategori)
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        # Ubah Nominal -> Kembali ke Input Nominal
         context.user_data.pop('nominal', None) 
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
@@ -442,11 +427,9 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_kategori'), 
              parse_mode='Markdown'
          )
-        # Pindah dari PREVIEW kembali ke GET_DESCRIPTION (Input Nominal)
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
-        # Ubah Keterangan -> Kembali ke Input Keterangan
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
@@ -454,7 +437,6 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
-        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan)
         return PREVIEW 
 
     return PREVIEW
@@ -462,7 +444,7 @@ async def handle_preview_actions(update: Update, context):
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
-# Terapkan patch nest_asyncio
+# Terapkan patch nest_asyncio di luar handler
 try:
     nest_asyncio.apply()
 except RuntimeError:
@@ -484,47 +466,31 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # KRITIS: Panggil initialize menggunakan asyncio.run()
+        # KRITIS: Panggil initialize menggunakan asyncio.run() karena ia adalah coroutine.
         asyncio.run(application.initialize())
 
-        # --- CONVERSATION HANDLER FINAL YANG STABLE ---
+        # --- PERBAIKAN ROUTING KRITIS ---
         conv_handler = ConversationHandler(
-            entry_points=[
-                CommandHandler("start", start),
-                # Tambahkan MessageHandler untuk otomatis memulai percakapan jika user mengirim pesan
-                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
-            ],
+            entry_points=[CommandHandler("start", start)],
             states={
-                CHOOSE_CATEGORY: [
-                    # 1. Pilih jenis transaksi (Callback)
-                    CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
-                ],
+                CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
                 
                 GET_NOMINAL: [
-                    # 2. Pilih kategori (Callback) ATAU Kembali ke menu transaksi (Callback)
-                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')
+                    # Mencocokkan pemilihan kategori ATAU tombol kembali ke menu transaksi
+                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
                 ],
                 
                 GET_DESCRIPTION: [
-                    # 3. Input Nominal (Pesan Teks)
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
-                    # 3. Tombol Kembali ke Pilih Kategori (Callback)
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal)
                 ],
-                
                 PREVIEW: [
-                    # 4. Input Keterangan (Pesan Teks)
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
-                    # 4. Aksi Preview (Callback) / Tombol Kembali ke Input Keterangan (Callback)
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)
                 ]
             },
-            fallbacks=[
-                CommandHandler("cancel", cancel),
-                # MessageHandler fallback (jika di tengah flow user kirim pesan tak terduga)
-                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
-            ],
+            fallbacks=[CommandHandler("cancel", cancel)],
             per_user=True,
             per_chat=True,
             allow_reentry=True
@@ -543,6 +509,8 @@ def init_application():
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask."""
     
+    # !!! PERHATIKAN: nest_asyncio.apply() TIDAK DIPINDAHKAN DI SINI, sesuai permintaan rollback.
+    
     global application_instance
     
     # 1. Lazy Loading/Re-initialization
@@ -550,7 +518,7 @@ def flask_webhook_handler():
         application_instance = init_application()
     
     if application_instance is None:
-        logging.error("Application instance tidak ditemukan.")
+        logging.error("Application instance tidak ditemukan. (Token Hilang saat runtime/inisialisasi gagal).")
         return 'Internal Server Error', 500
         
     try:
