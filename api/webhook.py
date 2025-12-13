@@ -78,7 +78,7 @@ def generate_preview(user_data):
     preview_text += f"*Kategori:* {kategori_nama}\n"
     preview_text += f"*Nominal:* Rp {nominal_formatted}\n"
     preview_text += f"*Keterangan:* {keterangan}\n\n"
-    preview_text += f"`{transaksi} {nominal} {kategori_nama} {keterangan}`"
+    preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
     return preview_text
 
 def get_menu_transaksi():
@@ -380,7 +380,7 @@ async def handle_preview_actions(update: Update, context):
             response_text += ringkasan_data
             
             # --- PENAMBAHAN URL HYPERLINK Laporan ---
-            response_text += "\n\nCek Laporan Anda pada: [Laporan Keuangan Tracker](https://bit.ly/LapKeuTracker)"
+            response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://bit.ly/LapKeuTracker)"
             # ----------------------------------------
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
@@ -542,3 +542,4 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
