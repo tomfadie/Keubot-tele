@@ -424,16 +424,28 @@ async def handle_kembali_actions(update: Update, context):
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
     
+    # 1. Menjawab Query
     try:
         await query.answer()
-        await query.message.delete()
     except Exception:
         pass
         
-    action = query.data
+    # 2. Mencoba Menghapus Pesan Preview (Block yang rentan terhadap 'Event loop is closed')
+    # Kita pisahkan agar kegagalan ini tidak menghentikan pengiriman payload (aksi_kirim)
     chat_id = query.message.chat_id
     
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logging.info("Berhasil menghapus pesan Preview sebelum mengirim konfirmasi.")
+    except Exception as e:
+        # Ini akan menangkap RuntimeError jika loop sudah ditutup
+        logging.warning(f"Gagal menghapus pesan Preview ID:{query.message.message_id}. Error: {e}")
+        pass # Lanjutkan proses pengiriman data meskipun penghapusan pesan gagal
+        
+    action = query.data
+    
     if action == 'aksi_kirim':
+        # ... (sisa kode send_to_make dan response tetap sama) ...
         
         payload = {
             'user_id': context.user_data.get('user_id'),
@@ -449,7 +461,7 @@ async def handle_preview_actions(update: Update, context):
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
-        success = send_to_make(payload) # Fungsi sinkron
+        success = send_to_make(payload) 
         
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
@@ -477,6 +489,7 @@ async def handle_preview_actions(update: Update, context):
         return await start(update, context)
         
     elif action == 'ubah_kategori':
+        # ... (sisa kode ubah kategori) ...
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -489,6 +502,7 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
+        # ... (sisa kode ubah nominal) ...
         context.user_data.pop('nominal', None) 
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
@@ -503,6 +517,7 @@ async def handle_preview_actions(update: Update, context):
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
+        # ... (sisa kode ubah keterangan) ...
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
@@ -639,5 +654,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
