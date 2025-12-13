@@ -118,20 +118,6 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- FUNGSI JOB QUEUE ---
-
-async def delete_message_job(context):
-    """Menghapus pesan menu setelah 2 menit."""
-    job = context.job
-    chat_id = job.data.get('chat_id')
-    message_id = job.data.get('message_id')
-    
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        logging.info(f"Pesan menu ID {message_id} di chat {chat_id} berhasil dihapus (Timeout).")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan menu ID {message_id}: {e}")
-
 # --- HANDLERS UTAMA (Semua fungsi async) ---
 
 async def start(update: Update, context):
@@ -153,22 +139,13 @@ async def start(update: Update, context):
     
     if update.message or update.callback_query:
         try:
-            sent_message = await context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=chat_id, 
                 text=text, 
                 reply_markup=get_menu_transaksi()
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # --- PENJADWALAN PENGHAPUSAN PESAN (2 MENIT = 120 detik) ---
-            context.application.job_queue.run_once(
-                 delete_message_job, 
-                 120, 
-                 data={'chat_id': chat_id, 'message_id': sent_message.message_id}
-             )
-            logging.info(f"Job penghapusan pesan ID {sent_message.message_id} dijadwalkan dalam 120 detik.")
-            # -----------------------------------------------------------
-
             if update.callback_query:
                  await update.callback_query.answer()
                  try:
@@ -230,8 +207,8 @@ async def choose_category(update: Update, context):
     await query.answer()
     data = query.data
     
+    # Handle tombol "Kembali ke Menu Transaksi" dari state GET_NOMINAL
     if data == 'kembali_transaksi':
-        # Kembali ke Menu Transaksi (State CHOOSE_CATEGORY)
         return await start(update, context) 
     
     kategori_dict = context.user_data.get('kategori_dict', {})
@@ -242,19 +219,13 @@ async def choose_category(update: Update, context):
     text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {kategori_nama}*.\n\n"
     text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
     
-    # Hapus pesan callback segera
-    await update.callback_query.message.delete()
-    
-    # --- Penundaan Mikro untuk Stabilitas Serverless (Mengatasi Double-tap) ---
-    await asyncio.sleep(0.05) 
-    # -------------------------------------------------------------------------
-    
-    sent_message = await context.bot.send_message(
-        chat_id=update.effective_chat.id, 
-        text=text, 
+    sent_message = await update.callback_query.message.reply_text(
+        text, 
         reply_markup=get_menu_kembali('kembali_kategori'), 
         parse_mode='Markdown'
     )
+    
+    await update.callback_query.message.delete()
 
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
@@ -262,7 +233,7 @@ async def choose_category(update: Update, context):
     return GET_DESCRIPTION 
 
 async def get_nominal(update: Update, context):
-    # Dipanggil saat user mengirim pesan teks berupa nominal
+    # Dipanggil saat user mengirim pesan teks berupa nominal (State GET_DESCRIPTION)
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
@@ -318,7 +289,7 @@ async def get_nominal(update: Update, context):
     return PREVIEW 
 
 async def get_description(update: Update, context):
-    # Dipanggil saat user mengirim pesan teks berupa keterangan
+    # Dipanggil saat user mengirim pesan teks berupa keterangan (State PREVIEW)
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     bot_message_to_delete_id = context.user_data.pop('description_request_message_id', None)
@@ -367,7 +338,7 @@ async def handle_kembali_actions(update: Update, context):
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
-        # Kembali dari input Keterangan ke input Nominal (State GET_DESCRIPTION)
+        # Kembali dari preview ke input Keterangan (State PREVIEW)
         text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
         text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
         
@@ -378,7 +349,7 @@ async def handle_kembali_actions(update: Update, context):
             parse_mode='Markdown'
         )
         context.user_data['description_request_message_id'] = sent_message.message_id
-        # Pindah dari PREVIEW kembali ke GET_DESCRIPTION
+        # Tetap di state PREVIEW, menunggu input teks
         return PREVIEW 
 
 async def handle_preview_actions(update: Update, context):
@@ -431,20 +402,11 @@ async def handle_preview_actions(update: Update, context):
         
         # 5. Tampilkan Menu Awal Kembali
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-        sent_menu = await context.bot.send_message( 
+        await context.bot.send_message( 
             chat_id=chat_id, 
             text=text_menu, 
             reply_markup=get_menu_transaksi()
         )
-        
-        # --- LOGIKA PENJADWALAN PENGHAPUSAN PESAN (2 Menit = 120 detik) ---
-        context.application.job_queue.run_once(
-            delete_message_job, 
-            120, 
-            data={'chat_id': chat_id, 'message_id': sent_menu.message_id}
-        )
-        logging.info(f"Job penghapusan pesan ID {sent_menu.message_id} dijadwalkan dalam 120 detik.")
-        # ------------------------------------------------------------------
         
         # Pindah dari PREVIEW kembali ke CHOOSE_CATEGORY
         return CHOOSE_CATEGORY
@@ -492,7 +454,7 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
-        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan, lalu lanjut ke get_description)
+        # Pindah dari PREVIEW tetap di PREVIEW (Menunggu input Keterangan)
         return PREVIEW 
 
     return PREVIEW
@@ -522,48 +484,46 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
+        # KRITIS: Panggil initialize menggunakan asyncio.run()
         asyncio.run(application.initialize())
 
-        # 1. Tentukan Entry Handler untuk Pesan Teks Apa Pun (Auto-Start)
-        auto_start_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, start)
-
-        # 2. Inisialisasi Conversation Handler
+        # --- CONVERSATION HANDLER FINAL YANG STABLE ---
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler("start", start),
-                auto_start_handler 
+                # Tambahkan MessageHandler untuk otomatis memulai percakapan jika user mengirim pesan
+                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
             ],
             states={
                 CHOOSE_CATEGORY: [
-                    # 1. Pilih jenis transaksi (Masuk/Keluar/Tabungan) -> Handler: choose_route. Pindah ke GET_NOMINAL
+                    # 1. Pilih jenis transaksi (Callback)
                     CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
                 ],
                 
                 GET_NOMINAL: [
-                    # 2. Pilih kategori (Callback) -> Handler: choose_category. Pindah ke GET_DESCRIPTION
-                    # Handler ini juga menangani tombol kembali ke Menu Transaksi
-                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
+                    # 2. Pilih kategori (Callback) ATAU Kembali ke menu transaksi (Callback)
+                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')
                 ],
                 
                 GET_DESCRIPTION: [
-                    # 3. Input Nominal (Pesan Teks) -> Handler: get_nominal. Pindah ke PREVIEW
-                    # Handler ini juga menangani tombol kembali ke Pilih Kategori
+                    # 3. Input Nominal (Pesan Teks)
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
+                    # 3. Tombol Kembali ke Pilih Kategori (Callback)
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                 ],
                 
                 PREVIEW: [
-                    # 4. Input Keterangan (Pesan Teks) -> Handler: get_description. Tetap di PREVIEW
-                    # 4. Aksi Preview (Callback)
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description), 
-                    # Handler untuk tombol aksi/kembali dari preview
+                    # 4. Input Keterangan (Pesan Teks)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
+                    # 4. Aksi Preview (Callback) / Tombol Kembali ke Input Keterangan (Callback)
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                 ]
             },
             fallbacks=[
                 CommandHandler("cancel", cancel),
-                auto_start_handler
+                # MessageHandler fallback (jika di tengah flow user kirim pesan tak terduga)
+                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
             ],
             per_user=True,
             per_chat=True,
@@ -609,21 +569,5 @@ def flask_webhook_handler():
         return 'OK', 200 
         
     except Exception as e:
-        # PENTING: Tangkap dan log NetworkError (RuntimeError) di sini
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-        
-    finally:
-        # --- SOLUSI KRITIS UNTUK RUNTIMER ERROR ASYNCIO PADA SERVERLESS ---
-        # Tutup klien HTTPX secara eksplisit setelah setiap pemrosesan
-        if application_instance is not None:
-            try:
-                # Akses klien melalui jalur Request internal bot
-                client = application_instance.bot._request.client
-                # Pastikan ini dijalankan di loop yang sama
-                asyncio.run(client.aclose()) 
-                logging.info("Klien HTTPX berhasil ditutup (Cleanup).")
-            except Exception as e:
-                # Ini menangkap error 'tuple' object dan RuntimeError sisa
-                logging.warning(f"Gagal menutup klien HTTPX: {e}")
-        # ------------------------------------------------------------------
