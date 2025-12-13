@@ -9,11 +9,8 @@
   "routes": [
     {
       "src": "/webhook",
-      "dest": "main.py:telegram_webhook",
+      "dest": "main.py:telegram_webhook", 
       "methods": ["POST"]
     }
   ]
-
 }
-
-
