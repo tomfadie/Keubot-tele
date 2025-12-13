@@ -4,7 +4,7 @@ import os
 import re
 import json
 import asyncio
-import nest_asyncio # Kritis: Untuk menjalankan async code (PTB) di Flask/Vercel
+import nest_asyncio 
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,7 +19,7 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-# Mengambil Token dari Environment Variable Vercel menggunakan os.getenv (Lebih Robust)
+# Mengambil Token dari Environment Variable Vercel
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
@@ -99,7 +99,6 @@ def get_menu_kategori(kategori_dict, route_name):
             row = []
     if row:
         keyboard.append(row)
-    # Tombol ini dikirim di state GET_NOMINAL, dan callback-nya harus di-handle di sana
     keyboard.append([InlineKeyboardButton("⬅️ Kembali ke Menu Transaksi", callback_data='kembali_transaksi')])
     return InlineKeyboardMarkup(keyboard)
 
@@ -323,16 +322,12 @@ async def handle_kembali_actions(update: Update, context):
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
-            # Karena kembali_kategori datang dari state GET_DESCRIPTION, 
-            # kita pindah ke state GET_NOMINAL (memilih kategori)
             reply_markup=get_menu_kategori(kategori_dict, transaksi), 
             parse_mode='Markdown'
         )
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
-        # kembali_nominal datang dari state PREVIEW
-        # kita pindah ke state PREVIEW (meminta deskripsi)
         text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
         text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
         
@@ -346,137 +341,109 @@ async def handle_kembali_actions(update: Update, context):
         return PREVIEW 
 
 async def handle_preview_actions(update: Update, context):
-
     query = update.callback_query
-
     await query.answer()
-
     action = query.data
-
     
-
     await query.message.delete()
-
     
-
     chat_id = query.message.chat_id
-
     
-
     if action == 'aksi_kirim':
-
         
-
         # 1. Persiapan Payload
-
         payload = {
-
             'user_id': context.user_data.get('user_id'),
-
             'first_name': context.user_data.get('first_name'),
-
             'username': context.user_data.get('username'),
-
             'transaksi': context.user_data.get('transaksi'),
-
             'kategori_nama': context.user_data.get('kategori_nama'),
-
             'nominal': context.user_data.get('nominal'),
-
             'keterangan': context.user_data.get('keterangan'),
-
         }
-
         
-
-        # --- PERBAIKAN KRITIS UNTUK USERNAME ---
-
-        # Pastikan username tidak None atau string kosong ('') sebelum dikirim ke Make
-
+        # --- PERBAIKAN KRITIS UNTUK USERNAME (Memastikan nilainya bersih) ---
         current_username = payload.get('username')
-
         if not current_username or current_username.lower() == 'nousername':
-
             payload['username'] = 'NoUsernameSet'
-
-        # ----------------------------------------
-
+        # ------------------------------------------------------------------
         
-
         success = send_to_make(payload)
-
         
-
         # 2. Membuat Teks Konfirmasi dengan Ringkasan Data
-
         transaksi_type = payload.get('transaksi', 'N/A')
-
         nominal_formatted = format_nominal(payload.get('nominal', 0))
-
         kategori_nama = payload.get('kategori_nama', 'N/A')
-
         keterangan = payload.get('keterangan', 'N/A')
-
-
 
         ringkasan_data = f"*Ringkasan:* {transaksi_type} Rp {nominal_formatted} - {kategori_nama} ({keterangan})"
 
-
-
         if success:
-
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
-
             response_text += ringkasan_data
-
         else:
-
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
 
-
-
         # 3. Kirim Pesan Konfirmasi
-
         await context.bot.send_message(chat_id, response_text, parse_mode='Markdown')
-
         
-
         # 4. Clear data sementara
-
         context.user_data.clear()
-
         
-
         # 5. Tampilkan Menu Awal Kembali
-
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-
         await context.bot.send_message(
-
             chat_id=chat_id, 
-
             text=text_menu, 
-
             reply_markup=get_menu_transaksi()
-
         )
-
         
-
         # Kembalikan state ke CHOOSE_CATEGORY
-
-        return CHOOSE_CATEGORY # Mengarahkan ke state awal
+        return CHOOSE_CATEGORY
         
-    # ... (lanjutkan blok elif untuk ubah_transaksi, ubah_kategori, dsb. yang tetap sama) ...
+    elif action == 'ubah_transaksi':
+        return await start(update, context)
+        
+    elif action == 'ubah_kategori':
+        kategori_dict = context.user_data.get('kategori_dict', {})
+        transaksi = context.user_data.get('transaksi', 'N/A').lower()
+        
+        await context.bot.send_message(
+            chat_id,
+            f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
+            reply_markup=get_menu_kategori(kategori_dict, transaksi),
+            parse_mode='Markdown'
+        )
+        return GET_NOMINAL
+        
+    elif action == 'ubah_nominal':
+        context.user_data.pop('nominal', None) 
+        
+        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
+        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
+        
+        await context.bot.send_message(
+             chat_id,
+             text,
+             reply_markup=get_menu_kembali('kembali_kategori'), 
+             parse_mode='Markdown'
+         )
+        return GET_DESCRIPTION 
+
+    elif action == 'ubah_keterangan':
+        context.user_data.pop('keterangan', None)
+        await context.bot.send_message(
+             chat_id,
+             "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
+             reply_markup=get_menu_kembali('kembali_nominal'), 
+             parse_mode='Markdown'
+         )
+        return PREVIEW 
+
+    return PREVIEW
 
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
-
-# Terapkan patch nest_asyncio
-try:
-    nest_asyncio.apply()
-except RuntimeError:
-    pass 
 
 # Inisialisasi Flask App (Vercel akan mencari instance 'app')
 app = Flask(__name__)
@@ -503,8 +470,8 @@ def init_application():
             states={
                 CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
                 
-                # PERBAIKAN: Tombol 'kembali_transaksi' (dari menu kategori) harus di-handle di sini
                 GET_NOMINAL: [
+                    # Mencocokkan pemilihan kategori ATAU tombol kembali ke menu transaksi
                     CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
                 ],
                 
@@ -513,7 +480,6 @@ def init_application():
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal)
                 ],
                 PREVIEW: [
-                    # Tombol kembali_nominal dari PREVIEW pindah ke handle_kembali_actions
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)
@@ -537,6 +503,15 @@ def init_application():
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask."""
+    
+    # --- Perbaikan KRITIS untuk Event Loop/Network Error ---
+    # Memastikan patch diterapkan pada event loop thread saat ini sebelum asyncio.run dipanggil
+    try:
+        nest_asyncio.apply()
+    except Exception:
+        pass
+    # -------------------------------------------------------
+    
     global application_instance
     
     # 1. Lazy Loading/Re-initialization
@@ -565,5 +540,3 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-
-
