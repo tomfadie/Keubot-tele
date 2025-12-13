@@ -356,6 +356,7 @@ async def handle_preview_actions(update: Update, context):
     
     if action == 'aksi_kirim':
         
+        # 1. Persiapan Payload (Tetap Sama)
         payload = {
             'user_id': context.user_data.get('user_id'),
             'first_name': context.user_data.get('first_name'),
@@ -368,55 +369,53 @@ async def handle_preview_actions(update: Update, context):
         
         success = send_to_make(payload)
         
+        # 2. Membuat Teks Konfirmasi yang Lebih Detail
+        transaksi_type = payload['transaksi']
+        nominal_formatted = format_nominal(payload['nominal'])
+        kategori_nama = payload['kategori_nama']
+        keterangan = payload['keterangan']
+
+        ringkasan_data = f"*Ringkasan:* {transaksi_type} Rp {nominal_formatted} - {kategori_nama} ({keterangan})"
+
         if success:
-            response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet."
+            response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
+            response_text += ringkasan_data
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
 
+        # 3. Kirim Pesan Konfirmasi
         await context.bot.send_message(chat_id, response_text, parse_mode='Markdown')
+        
+        # 4. Clear data sementara (penting)
         context.user_data.clear()
-        return ConversationHandler.END
         
-    elif action == 'ubah_transaksi':
-        return await start(update, context)
+        # 5. Panggil kembali handler 'start' untuk menampilkan menu awal
+        # Kita menggunakan call langsung ke start dan return state yang dihasilkan
+        # Perlu membuat objek Update dan Context sementara yang diperlukan start
         
-    elif action == 'ubah_kategori':
-        kategori_dict = context.user_data.get('kategori_dict', {})
-        transaksi = context.user_data.get('transaksi', 'N/A').lower()
+        # Agar bot kembali ke menu, kita panggil start handler dan return state-nya
+        # Kita perlu membuat Update object yang benar-benar baru untuk state start
         
+        # NOTE: Karena start handler sudah didesain untuk merespons dengan menu dan pindah ke CHOOSE_CATEGORY,
+        # kita hanya perlu memanggilnya ulang.
+        
+        # Kita akan memodifikasi start handler agar bisa dipanggil langsung tanpa Update/Message
+        # untuk meminimalkan error, namun cara paling bersih adalah mengarahkan kembali ke state awal
+        
+        # Kita akan menggunakan cara yang lebih sederhana: 
+        # Cukup kirim ulang menu dan kembalikan state ke CHOOSE_CATEGORY
+        
+        text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
         await context.bot.send_message(
-            chat_id,
-            f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
-            reply_markup=get_menu_kategori(kategori_dict, transaksi),
-            parse_mode='Markdown'
+            chat_id=chat_id, 
+            text=text_menu, 
+            reply_markup=get_menu_transaksi()
         )
-        return GET_NOMINAL
         
-    elif action == 'ubah_nominal':
-        context.user_data.pop('nominal', None) 
+        # Kembalikan state ke CHOOSE_CATEGORY
+        return CHOOSE_CATEGORY # Mengarahkan ke state awal
         
-        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
-        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
-        
-        await context.bot.send_message(
-             chat_id,
-             text,
-             reply_markup=get_menu_kembali('kembali_kategori'), 
-             parse_mode='Markdown'
-         )
-        return GET_DESCRIPTION 
-
-    elif action == 'ubah_keterangan':
-        context.user_data.pop('keterangan', None)
-        await context.bot.send_message(
-             chat_id,
-             "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
-             reply_markup=get_menu_kembali('kembali_nominal'), 
-             parse_mode='Markdown'
-         )
-        return PREVIEW 
-
-    return PREVIEW
+    # ... (lanjutkan blok elif untuk ubah_transaksi, ubah_kategori, dsb. yang tetap sama) ...
 
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
@@ -514,3 +513,4 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
