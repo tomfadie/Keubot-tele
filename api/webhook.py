@@ -33,7 +33,7 @@ logging.basicConfig(
 # Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
-# Definisi Menu Kategori (Silakan lengkapi sesuai kebutuhan Anda)
+# Definisi Menu Kategori 
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
     'Lainnya': 'masuk_lainnya'
@@ -457,7 +457,7 @@ def init_application():
 # PENTING: Inisialisasi Application global sebelum Flask dimulai
 application_instance = init_application()
 
-# Inisialisasi Flask App (Entry Point Utama)
+# Inisialisasi Flask App (Entry Point Utama yang dicari Vercel)
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
