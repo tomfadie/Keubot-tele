@@ -206,7 +206,6 @@ async def choose_category(update: Update, context):
     await query.answer()
     data = query.data
     
-    # Handle tombol "Kembali ke Menu Transaksi" dari state GET_NOMINAL
     if data == 'kembali_transaksi':
         return await start(update, context) 
     
@@ -362,14 +361,13 @@ async def handle_preview_actions(update: Update, context):
             'keterangan': context.user_data.get('keterangan'),
         }
         
-        # PERBAIKAN USERNAME (sudah ada sebelum request rollback ini)
         current_username = payload.get('username')
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
         success = send_to_make(payload)
         
-        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data (sudah ada sebelum request rollback ini)
+        # 2. Membuat Teks Konfirmasi
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
         kategori_nama = payload.get('kategori_nama', 'N/A')
@@ -380,6 +378,10 @@ async def handle_preview_actions(update: Update, context):
         if success:
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
             response_text += ringkasan_data
+            
+            # --- PENAMBAHAN URL HYPERLINK Laporan ---
+            response_text += "\n\nCek Laporan Anda pada: [Laporan Keuangan Tracker](https://bit.ly/LapKeuTracker)"
+            # ----------------------------------------
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
 
@@ -389,16 +391,8 @@ async def handle_preview_actions(update: Update, context):
         # 4. Clear data sementara
         context.user_data.clear()
         
-        # 5. Tampilkan Menu Awal Kembali
-        text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=text_menu, 
-            reply_markup=get_menu_transaksi()
-        )
-        
-        # Kembalikan state ke CHOOSE_CATEGORY
-        return CHOOSE_CATEGORY
+        # 5. AKHIRI PERCAKAPAN (Mencegah Menu Awal Muncul)
+        return ConversationHandler.END
         
     elif action == 'ubah_transaksi':
         return await start(update, context)
@@ -444,7 +438,7 @@ async def handle_preview_actions(update: Update, context):
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
-# Terapkan patch nest_asyncio di luar handler
+# Terapkan patch nest_asyncio
 try:
     nest_asyncio.apply()
 except RuntimeError:
@@ -466,31 +460,39 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # KRITIS: Panggil initialize menggunakan asyncio.run() karena ia adalah coroutine.
+        # KRITIS: Panggil initialize menggunakan asyncio.run()
         asyncio.run(application.initialize())
 
-        # --- PERBAIKAN ROUTING KRITIS ---
+        # --- CONVERSATION HANDLER (Perbaikan Routing) ---
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
+            entry_points=[
+                CommandHandler("start", start),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
+            ],
             states={
-                CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
+                CHOOSE_CATEGORY: [
+                    CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
+                ],
                 
                 GET_NOMINAL: [
-                    # Mencocokkan pemilihan kategori ATAU tombol kembali ke menu transaksi
-                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
+                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')
                 ],
                 
                 GET_DESCRIPTION: [
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
                 ],
+                
                 PREVIEW: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
                     CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)
                 ]
             },
-            fallbacks=[CommandHandler("cancel", cancel)],
+            fallbacks=[
+                CommandHandler("cancel", cancel),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, start) 
+            ],
             per_user=True,
             per_chat=True,
             allow_reentry=True
@@ -509,8 +511,6 @@ def init_application():
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask."""
     
-    # !!! PERHATIKAN: nest_asyncio.apply() TIDAK DIPINDAHKAN DI SINI, sesuai permintaan rollback.
-    
     global application_instance
     
     # 1. Lazy Loading/Re-initialization
@@ -518,7 +518,7 @@ def flask_webhook_handler():
         application_instance = init_application()
     
     if application_instance is None:
-        logging.error("Application instance tidak ditemukan. (Token Hilang saat runtime/inisialisasi gagal).")
+        logging.error("Application instance tidak ditemukan.")
         return 'Internal Server Error', 500
         
     try:
