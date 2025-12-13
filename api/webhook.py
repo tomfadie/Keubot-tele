@@ -118,6 +118,21 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# --- FUNGSI JOB QUEUE ---
+
+async def delete_message_job(context):
+    """Menghapus pesan menu setelah 2 menit."""
+    job = context.job
+    chat_id = job.data.get('chat_id')
+    message_id = job.data.get('message_id')
+    
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logging.info(f"Pesan menu ID {message_id} di chat {chat_id} berhasil dihapus (Timeout).")
+    except Exception as e:
+        # Jika pesan sudah dihapus oleh pengguna/sistem lain, tidak perlu error
+        logging.warning(f"Gagal menghapus pesan menu ID {message_id}: {e}")
+
 # --- HANDLERS UTAMA (Semua fungsi async) ---
 
 async def start(update: Update, context):
@@ -206,7 +221,6 @@ async def choose_category(update: Update, context):
     await query.answer()
     data = query.data
     
-    # Handle tombol "Kembali ke Menu Transaksi" dari state GET_NOMINAL
     if data == 'kembali_transaksi':
         return await start(update, context) 
     
@@ -362,14 +376,14 @@ async def handle_preview_actions(update: Update, context):
             'keterangan': context.user_data.get('keterangan'),
         }
         
-        # PERBAIKAN USERNAME (sudah ada sebelum request rollback ini)
+        # PERBAIKAN USERNAME
         current_username = payload.get('username')
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
         success = send_to_make(payload)
         
-        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data (sudah ada sebelum request rollback ini)
+        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
         kategori_nama = payload.get('kategori_nama', 'N/A')
@@ -391,11 +405,20 @@ async def handle_preview_actions(update: Update, context):
         
         # 5. Tampilkan Menu Awal Kembali
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
-        await context.bot.send_message(
+        sent_menu = await context.bot.send_message( # Simpan objek pesan yang baru dikirim
             chat_id=chat_id, 
             text=text_menu, 
             reply_markup=get_menu_transaksi()
         )
+        
+        # --- LOGIKA PENJADWALAN PENGHAPUSAN PESAN (2 Menit = 120 detik) ---
+        context.application.job_queue.run_once(
+            delete_message_job, 
+            120, 
+            data={'chat_id': chat_id, 'message_id': sent_menu.message_id}
+        )
+        logging.info(f"Job penghapusan pesan ID {sent_menu.message_id} dijadwalkan dalam 120 detik.")
+        # ------------------------------------------------------------------
         
         # Kembalikan state ke CHOOSE_CATEGORY
         return CHOOSE_CATEGORY
@@ -444,7 +467,7 @@ async def handle_preview_actions(update: Update, context):
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
-# Terapkan patch nest_asyncio di luar handler
+# Terapkan patch nest_asyncio
 try:
     nest_asyncio.apply()
 except RuntimeError:
@@ -464,19 +487,23 @@ def init_application():
         return None
 
     try:
+        # Inisialisasi Application termasuk Job Queue
         application = Application.builder().token(TOKEN).build()
         
-        # KRITIS: Panggil initialize menggunakan asyncio.run() karena ia adalah coroutine.
         asyncio.run(application.initialize())
+        
+        # 1. Tentukan Entry Handler untuk Pesan Teks Apa Pun
+        auto_start_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, start)
 
-        # --- PERBAIKAN ROUTING KRITIS ---
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
+            entry_points=[
+                CommandHandler("start", start),
+                auto_start_handler 
+            ],
             states={
                 CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
                 
                 GET_NOMINAL: [
-                    # Mencocokkan pemilihan kategori ATAU tombol kembali ke menu transaksi
                     CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar|tabungan)_.*$|^kembali_transaksi$')
                 ],
                 
@@ -490,7 +517,10 @@ def init_application():
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description)
                 ]
             },
-            fallbacks=[CommandHandler("cancel", cancel)],
+            fallbacks=[
+                CommandHandler("cancel", cancel),
+                auto_start_handler 
+            ],
             per_user=True,
             per_chat=True,
             allow_reentry=True
@@ -508,8 +538,6 @@ def init_application():
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask."""
-    
-    # !!! PERHATIKAN: nest_asyncio.apply() TIDAK DIPINDAHKAN DI SINI, sesuai permintaan rollback.
     
     global application_instance
     
@@ -531,6 +559,7 @@ def flask_webhook_handler():
         update = Update.de_json(data, application_instance.bot)
         
         # KRITIS: Menggunakan asyncio.run untuk menjamin eksekusi async PTB selesai
+        # Job Queue handling secara internal diurus oleh process_update
         asyncio.run(application_instance.process_update(update)) 
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
