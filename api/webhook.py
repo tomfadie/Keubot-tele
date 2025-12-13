@@ -173,7 +173,6 @@ async def start(update: Update, context):
             try:
                 await context.bot.send_message(
                     chat_id=chat_id, 
-                    text="🤖 *Menu gagal dimuat.* Silakan tekan `/start` lagi untuk membuka menu.",
                     parse_mode='Markdown'
                 )
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
@@ -667,6 +666,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
