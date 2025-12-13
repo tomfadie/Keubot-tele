@@ -3,7 +3,10 @@ import logging
 import os
 import re
 import json
-from flask import Flask, request as flask_request  # Wajib untuk entry point Vercel/Flask
+import asyncio
+import nest_asyncio # Digunakan untuk menjalankan async code (PTB) di lingkungan Flask/Vercel yang sinkron
+
+from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -14,14 +17,15 @@ from telegram.ext import (
     ConversationHandler
 )
 
-# --- KONFIGURASI GLOBAL ---
+# --- KONFIGURASI DAN STATES ---
 
 # Mengambil Token dari Environment Variable Vercel
 TOKEN = os.environ.get("BOT_TOKEN") 
 if not TOKEN:
-    logging.error("BOT_TOKEN Environment Variable tidak ditemukan.")
+    # Log ini akan muncul di log Vercel jika token hilang
+    logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-# URL Webhook Make Anda 
+# URL Webhook Make Anda (Pastikan ini benar)
 MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96"
 
 # Konfigurasi logging
@@ -33,7 +37,7 @@ logging.basicConfig(
 # Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
-# Definisi Menu Kategori 
+# Definisi Menu Kategori
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
     'Lainnya': 'masuk_lainnya'
@@ -47,7 +51,7 @@ KATEGORI_KELUAR = {
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
-# --- FUNGSI UTILITY & UI ---
+# --- FUNGSI UTILITY ---
 
 def send_to_make(data):
     """Mengirim payload data ke webhook Make."""
@@ -115,15 +119,16 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS UTAMA ---
+# --- HANDLERS UTAMA (Semua fungsi async) ---
 
 async def start(update: Update, context):
-    """Memulai Conversation Handler dan menampilkan menu utama. Kritis untuk stabilitas respons."""
     
-    logging.info(f"Handler 'start' Dipanggil oleh User: {update.effective_user.id}")
+    # KOREKSI: Gunakan effective_user untuk identitas
+    user = update.effective_user 
     
-    user = update.effective_user
-    chat_id = update.effective_chat.id
+    # --- LOGGING KRITIS ---
+    logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
+    # -----------------------
 
     user_data_identity = {
         'user_id': user.id,
@@ -135,28 +140,30 @@ async def start(update: Update, context):
     context.user_data.update(user_data_identity)
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
+    chat_id = update.effective_chat.id
     
-    # KOREKSI PENTING: Menggunakan effective_chat.id untuk pengiriman pesan yang stabil
-    try:
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=text, 
-            reply_markup=get_menu_transaksi()
-        )
-        logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
-        
-        # Jawab callback query dan hapus pesan lama jika dipanggil oleh tombol
-        if update.callback_query:
-             await update.callback_query.answer()
-             try:
-                 await update.callback_query.message.delete()
-             except Exception:
-                 pass
+    if update.message or update.callback_query:
+        try:
+            # Selalu gunakan send_message ke chat ID untuk pesan awal /start
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=text, 
+                reply_markup=get_menu_transaksi()
+            )
+            logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
+            
+            # Jika dipicu oleh callback_query (misal: 'Ubah Transaksi'), hapus pesan lama
+            if update.callback_query:
+                 await update.callback_query.answer()
+                 try:
+                     await update.callback_query.message.delete()
+                 except Exception:
+                     pass
 
-    except Exception as e:
-        logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
-        
-    # Hapus pesan /start user (untuk kerapihan)
+        except Exception as e:
+            logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
+            
+    # Hapus pesan /start dari user agar bersih
     if update.message:
         try:
             await update.message.delete()
@@ -208,6 +215,7 @@ async def choose_category(update: Update, context):
     data = query.data
     
     if data == 'kembali_transaksi':
+        # Melompat kembali ke handler start
         return await start(update, context) 
     
     kategori_dict = context.user_data.get('kategori_dict', {})
@@ -244,6 +252,7 @@ async def get_nominal(update: Update, context):
     bot_message_to_delete_id = context.user_data.get('nominal_request_message_id')
     
     try:
+        # Menghapus semua non-digit dari input
         nominal_str = re.sub(r'\D', '', update.message.text)
         nominal = int(nominal_str)
         if nominal <= 0:
@@ -328,9 +337,7 @@ async def handle_kembali_actions(update: Update, context):
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
-        kategori_dict = context.user_data.get('kategori_dict', {})
-        transaksi = context.user_data.get('transaksi', 'N/A').lower()
-
+        # Kategori sudah dipilih, kembali ke meminta nominal
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
         text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
         
@@ -348,12 +355,14 @@ async def handle_preview_actions(update: Update, context):
     await query.answer()
     action = query.data
     
+    # Hapus pesan preview setelah aksi dilakukan
     await query.message.delete()
     
     chat_id = query.message.chat_id
     
     if action == 'aksi_kirim':
         
+        # 1. Siapkan Payload
         payload = {
             'user_id': context.user_data.get('user_id'),
             'first_name': context.user_data.get('first_name'),
@@ -364,8 +373,10 @@ async def handle_preview_actions(update: Update, context):
             'keterangan': context.user_data.get('keterangan'),
         }
         
+        # 2. Kirim ke Make
         success = send_to_make(payload)
         
+        # 3. Beri Respon ke Pengguna
         if success:
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet."
         else:
@@ -376,6 +387,7 @@ async def handle_preview_actions(update: Update, context):
         return ConversationHandler.END
         
     elif action == 'ubah_transaksi':
+        # Kembali ke START (Memilih Masuk/Keluar/Tabungan)
         return await start(update, context)
         
     elif action == 'ubah_kategori':
@@ -388,33 +400,46 @@ async def handle_preview_actions(update: Update, context):
             reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
-        return GET_NOMINAL 
+        return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        context.user_data.pop('nominal', None) 
+        context.user_data.pop('nominal', None) # Hapus nominal lama
+        
+        # Kembali ke meminta nominal
+        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
+        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
+        
         await context.bot.send_message(
              chat_id,
-             f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
-             "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):",
+             text,
              reply_markup=get_menu_kembali('kembali_kategori'), 
              parse_mode='Markdown'
          )
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
-        context.user_data.pop('keterangan', None) 
+        context.user_data.pop('keterangan', None) # Hapus keterangan lama
         await context.bot.send_message(
              chat_id,
              "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
              reply_markup=get_menu_kembali('kembali_nominal'), 
              parse_mode='Markdown'
          )
-        return PREVIEW 
+        return PREVIEW # Kembali ke state menunggu keterangan
 
     return PREVIEW
 
 
-# --- FUNGSI ENTRY POINT VERCEL (SOLUSI FLASK KRITIS) ---
+# --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
+
+# Terapkan patch nest_asyncio di sini
+try:
+    nest_asyncio.apply()
+except RuntimeError:
+    pass # Jika sudah diterapkan, lewati
+
+# Inisialisasi Flask App (Vercel akan mencari instance 'app')
+app = Flask(__name__)
 
 def init_application():
     """Menginisialisasi Application dan Conversation Handler."""
@@ -454,14 +479,12 @@ def init_application():
         logging.error(f"Error saat inisialisasi Application: {e}")
         return None
 
-# PENTING: Inisialisasi Application global sebelum Flask dimulai
+# PENTING: Application instance harus dibuat sebelum digunakan (sekali saja)
 application_instance = init_application()
 
-# Inisialisasi Flask App (Entry Point Utama yang dicari Vercel)
-app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
-def webhook_handler():
+def flask_webhook_handler():
     """
     Fungsi handler yang diakses oleh Flask/Vercel pada jalur /webhook.
     """
@@ -480,11 +503,14 @@ def webhook_handler():
         return 'Bad Request', 400
 
     try:
-        # Buat objek Update dan proses menggunakan Application instance
+        # 1. Buat objek Update
         update = Update.de_json(data, application_instance.bot)
-        application_instance.process_update(update)
         
-        logging.info("Update Telegram berhasil diproses oleh Application.")
+        # 2. KRITIS: Gunakan asyncio.run untuk menjamin eksekusi async PTB selesai
+        # Ini mengatasi RuntimeWarning: coroutine 'Application.process_update' was never awaited
+        asyncio.run(application_instance.process_update(update)) 
+
+        logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 # HARUS merespons 200 OK ke Telegram
         
     except Exception as e:
