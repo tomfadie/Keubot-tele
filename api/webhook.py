@@ -18,21 +18,25 @@ from telegram.ext import (
 )
 
 # --- KONFIGURASI DAN STATES ---
-# (Struktur di sini sama seperti sebelumnya)
-# ...
+
+# Mengambil Token dari Environment Variable Vercel
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
+# URL Webhook Make Anda (Pastikan ini benar)
 MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
 
+# Konfigurasi logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
+# Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
+# Definisi Menu Kategori
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
     'Lainnya': 'masuk_lainnya'
@@ -47,11 +51,9 @@ KATEGORI_KELUAR = {
 }
 
 # --- FUNGSI UTILITY ---
-# (Semua fungsi Utility dan Handler tetap sama)
-# ...
 
 def send_to_make(data):
-    # ... (fungsi tetap sama) ...
+    """Mengirim payload data ke webhook Make."""
     try:
         response = requests.post(MAKE_WEBHOOK_URL, json=data) 
         response.raise_for_status() 
@@ -60,7 +62,6 @@ def send_to_make(data):
     except requests.exceptions.RequestException as e:
         logging.error(f"Gagal mengirim data ke Make: {e}")
         return False
-# ... (lanjutan fungsi utility lainnya) ...
 
 def format_nominal(nominal):
     return "{:,.0f}".format(nominal).replace(",", ".")
@@ -118,8 +119,6 @@ def get_menu_kembali(callback_data):
     return InlineKeyboardMarkup(keyboard)
 
 # --- HANDLERS UTAMA (Semua fungsi async) ---
-# (Semua Handler tetap sama)
-# ...
 
 async def start(update: Update, context):
     
@@ -148,7 +147,8 @@ async def start(update: Update, context):
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
             if update.callback_query:
-                 await update.callback_query.answer()
+                 # Panggil answer() tanpa await, karena kita sudah di async context
+                 await update.callback_query.answer() 
                  try:
                      await update.callback_query.message.delete()
                  except Exception:
@@ -204,7 +204,8 @@ async def choose_route(update: Update, context):
 
 async def choose_category(update: Update, context):
     query = update.callback_query
-    await query.answer()
+    # HINDARI ERROR: Pastikan answer() selalu di awal handler callback
+    await query.answer() 
     data = query.data
     
     if data == 'kembali_transaksi':
@@ -366,6 +367,7 @@ async def handle_preview_actions(update: Update, context):
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
+        # Kirim data ke Make (ini adalah fungsi sinkron)
         success = send_to_make(payload)
         
         # 2. Membuat Teks Konfirmasi
@@ -380,13 +382,8 @@ async def handle_preview_actions(update: Update, context):
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
             response_text += ringkasan_data
             
-            # --- PENAMBAHAN URL HYPERLINK Laporan ---
             response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://docs.google.com/spreadsheets/d/1A2ephAX4I1zwxmvFlkSAeHRc7OjcN2peQqZgPsGZ8X8/edit?gid=550879818#gid=550879818)"
-            # ----------------------------------------
-            
-            # --- PENAMBAHAN INSTRUKSI START BARU ---
             response_text += "\n\nJika ingin melakukan pencatatan baru silahkan tekan /start"
-            # ----------------------------------------
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
@@ -456,7 +453,7 @@ app = Flask(__name__)
 application_instance = None 
 
 def init_application():
-    """Menginisialisasi Application dan Conversation Handler."""
+    """Menginisialisasi Application dan Conversation Handler tanpa memanggil initialize()."""
     global application_instance
     
     if not TOKEN:
@@ -465,11 +462,9 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # --- PERBAIKAN 1: Hapus Inisialisasi loop secara sinkron di sini ---
-        # Initialize akan dipanggil oleh process_update di loop yang baru dibuat.
-        # application.initialize() 
-        # ----------------------------------------------------
-
+        # --- PERBAIKAN: Initialize TIDAK dijalankan di sini ---
+        # Initialize akan dipanggil secara kondisional di flask_webhook_handler
+        
         # --- CONVERSATION HANDLER ---
         conv_handler = ConversationHandler(
             entry_points=[
@@ -514,7 +509,7 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask."""
+    """Fungsi handler Vercel/Flask. Membuat loop baru per request."""
     
     global application_instance
     
@@ -535,14 +530,22 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, application_instance.bot)
         
-        # --- PERBAIKAN FINAL: Membuat Loop Baru per Request ---
+        # --- PERBAIKAN KRITIS UNTUK FINAL EVENT LOOP ---
         
         # 1. Buat loop baru
         new_loop = asyncio.new_event_loop()
-        
-        # 2. Set loop baru
         asyncio.set_event_loop(new_loop)
         
+        # 2. Inisialisasi Kondisional (Mengatasi "Application was not initialized")
+        if not hasattr(application_instance, '_initialized') or not application_instance._initialized:
+            
+            # Panggil initialize di loop baru pada request pertama
+            new_loop.run_until_complete(application_instance.initialize())
+            
+            # Set flag agar tidak dipanggil lagi
+            application_instance._initialized = True 
+            logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
+            
         # 3. Jalankan pemrosesan update di loop baru
         new_loop.run_until_complete(application_instance.process_update(update)) 
         
@@ -554,5 +557,8 @@ def flask_webhook_handler():
         return 'OK', 200 
         
     except Exception as e:
+        # PENTING: Jika terjadi error di dalam loop, set loop kembali ke None
+        asyncio.set_event_loop(None) 
+        
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
