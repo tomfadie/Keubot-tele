@@ -18,25 +18,21 @@ from telegram.ext import (
 )
 
 # --- KONFIGURASI DAN STATES ---
-
-# Mengambil Token dari Environment Variable Vercel
+# (Struktur di sini sama seperti sebelumnya)
+# ...
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-# URL Webhook Make Anda (Pastikan ini benar)
 MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
 
-# Konfigurasi logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
-# Definisi Menu Kategori
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
     'Lainnya': 'masuk_lainnya'
@@ -51,9 +47,11 @@ KATEGORI_KELUAR = {
 }
 
 # --- FUNGSI UTILITY ---
+# (Semua fungsi Utility dan Handler tetap sama)
+# ...
 
 def send_to_make(data):
-    """Mengirim payload data ke webhook Make."""
+    # ... (fungsi tetap sama) ...
     try:
         response = requests.post(MAKE_WEBHOOK_URL, json=data) 
         response.raise_for_status() 
@@ -62,6 +60,7 @@ def send_to_make(data):
     except requests.exceptions.RequestException as e:
         logging.error(f"Gagal mengirim data ke Make: {e}")
         return False
+# ... (lanjutan fungsi utility lainnya) ...
 
 def format_nominal(nominal):
     return "{:,.0f}".format(nominal).replace(",", ".")
@@ -119,6 +118,8 @@ def get_menu_kembali(callback_data):
     return InlineKeyboardMarkup(keyboard)
 
 # --- HANDLERS UTAMA (Semua fungsi async) ---
+# (Semua Handler tetap sama)
+# ...
 
 async def start(update: Update, context):
     
@@ -464,10 +465,9 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # --- PERBAIKAN 1: Inisialisasi loop untuk Application ---
-        # Menggunakan run_until_complete untuk memastikan initialize berjalan di loop saat ini
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(application.initialize())
+        # --- PERBAIKAN 1: Hapus Inisialisasi loop secara sinkron di sini ---
+        # Initialize akan dipanggil oleh process_update di loop yang baru dibuat.
+        # application.initialize() 
         # ----------------------------------------------------
 
         # --- CONVERSATION HANDLER ---
@@ -535,15 +535,20 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, application_instance.bot)
         
-        # --- PERBAIKAN 2: Menggunakan loop.run_until_complete yang lebih aman ---
-        # Mencoba mendapatkan loop yang berjalan, jika tidak, mendapatkan loop yang ada.
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.get_event_loop()
-            
-        loop.run_until_complete(application_instance.process_update(update)) 
-        # ----------------------------------------------------------------------
+        # --- PERBAIKAN FINAL: Membuat Loop Baru per Request ---
+        
+        # 1. Buat loop baru
+        new_loop = asyncio.new_event_loop()
+        
+        # 2. Set loop baru
+        asyncio.set_event_loop(new_loop)
+        
+        # 3. Jalankan pemrosesan update di loop baru
+        new_loop.run_until_complete(application_instance.process_update(update)) 
+        
+        # 4. Tutup loop setelah selesai
+        new_loop.close()
+        # ------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 
