@@ -79,10 +79,10 @@ def generate_preview(user_data):
 # FUNGSI DEBUGGING BARU
 def debug_check_ids(context):
     """Mencetak ID pesan yang seharusnya dihapus untuk debugging."""
-    chat_id = context._chat_id # ID Chat
+    # ... (fungsi ini tetap sama seperti sebelumnya) ...
+    chat_id = context._chat_id 
     nominal_id = context.user_data.get('nominal_request_message_id')
     
-    # Cek ID Pesan Bot yang Minta Nominal
     if nominal_id:
         logging.info(f"DEBUG: nominal_request_message_id = {nominal_id} (Chat: {chat_id}). ID siap dihapus.")
     else:
@@ -355,12 +355,26 @@ async def get_description(update: Update, context):
     keterangan = update.message.text
     context.user_data['keterangan'] = keterangan
     
+    # --- PERBAIKAN: Pisahkan blok penghapusan untuk keandalan ---
+    
+    # 1. Hapus pesan User (Keterangan/Deskripsi)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        if bot_message_to_delete_id:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-    except Exception:
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Deskripsi)")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Deskripsi). Error: {e}")
         pass
+
+    # 2. Hapus pesan Bot Lama (Permintaan Keterangan)
+    if bot_message_to_delete_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request)")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request). Error: {e}")
+            pass
+    
+    # ------------------------------------------------------------
             
     preview_text = generate_preview(context.user_data)
     
@@ -625,4 +639,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
