@@ -346,73 +346,125 @@ async def handle_kembali_actions(update: Update, context):
         return PREVIEW 
 
 async def handle_preview_actions(update: Update, context):
+
     query = update.callback_query
+
     await query.answer()
+
     action = query.data
+
     
+
     await query.message.delete()
+
     
+
     chat_id = query.message.chat_id
+
     
+
     if action == 'aksi_kirim':
+
         
-        # 1. Persiapan Payload (Tetap Sama)
+
+        # 1. Persiapan Payload
+
         payload = {
+
             'user_id': context.user_data.get('user_id'),
+
             'first_name': context.user_data.get('first_name'),
+
             'username': context.user_data.get('username'),
+
             'transaksi': context.user_data.get('transaksi'),
+
             'kategori_nama': context.user_data.get('kategori_nama'),
+
             'nominal': context.user_data.get('nominal'),
+
             'keterangan': context.user_data.get('keterangan'),
+
         }
+
         
+
+        # --- PERBAIKAN KRITIS UNTUK USERNAME ---
+
+        # Pastikan username tidak None atau string kosong ('') sebelum dikirim ke Make
+
+        current_username = payload.get('username')
+
+        if not current_username or current_username.lower() == 'nousername':
+
+            payload['username'] = 'NoUsernameSet'
+
+        # ----------------------------------------
+
+        
+
         success = send_to_make(payload)
+
         
-        # 2. Membuat Teks Konfirmasi yang Lebih Detail
-        transaksi_type = payload['transaksi']
-        nominal_formatted = format_nominal(payload['nominal'])
-        kategori_nama = payload['kategori_nama']
-        keterangan = payload['keterangan']
+
+        # 2. Membuat Teks Konfirmasi dengan Ringkasan Data
+
+        transaksi_type = payload.get('transaksi', 'N/A')
+
+        nominal_formatted = format_nominal(payload.get('nominal', 0))
+
+        kategori_nama = payload.get('kategori_nama', 'N/A')
+
+        keterangan = payload.get('keterangan', 'N/A')
+
+
 
         ringkasan_data = f"*Ringkasan:* {transaksi_type} Rp {nominal_formatted} - {kategori_nama} ({keterangan})"
 
+
+
         if success:
+
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
+
             response_text += ringkasan_data
+
         else:
+
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke sistem Make. Silakan coba lagi nanti atau hubungi Admin."
 
+
+
         # 3. Kirim Pesan Konfirmasi
+
         await context.bot.send_message(chat_id, response_text, parse_mode='Markdown')
+
         
-        # 4. Clear data sementara (penting)
+
+        # 4. Clear data sementara
+
         context.user_data.clear()
+
         
-        # 5. Panggil kembali handler 'start' untuk menampilkan menu awal
-        # Kita menggunakan call langsung ke start dan return state yang dihasilkan
-        # Perlu membuat objek Update dan Context sementara yang diperlukan start
-        
-        # Agar bot kembali ke menu, kita panggil start handler dan return state-nya
-        # Kita perlu membuat Update object yang benar-benar baru untuk state start
-        
-        # NOTE: Karena start handler sudah didesain untuk merespons dengan menu dan pindah ke CHOOSE_CATEGORY,
-        # kita hanya perlu memanggilnya ulang.
-        
-        # Kita akan memodifikasi start handler agar bisa dipanggil langsung tanpa Update/Message
-        # untuk meminimalkan error, namun cara paling bersih adalah mengarahkan kembali ke state awal
-        
-        # Kita akan menggunakan cara yang lebih sederhana: 
-        # Cukup kirim ulang menu dan kembalikan state ke CHOOSE_CATEGORY
-        
+
+        # 5. Tampilkan Menu Awal Kembali
+
         text_menu = "Pencatatan selesai. Silakan pilih transaksi selanjutnya:"
+
         await context.bot.send_message(
+
             chat_id=chat_id, 
+
             text=text_menu, 
+
             reply_markup=get_menu_transaksi()
+
         )
+
         
+
         # Kembalikan state ke CHOOSE_CATEGORY
+
         return CHOOSE_CATEGORY # Mengarahkan ke state awal
         
     # ... (lanjutkan blok elif untuk ubah_transaksi, ubah_kategori, dsb. yang tetap sama) ...
@@ -513,4 +565,5 @@ def flask_webhook_handler():
     except Exception as e:
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
