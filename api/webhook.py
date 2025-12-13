@@ -557,4 +557,50 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask. Pola
+    """Fungsi handler Vercel/Flask. Pola Event Loop per Request yang Lebih Aman."""
+    
+    current_application_instance = init_application() 
+    
+    if current_application_instance is None:
+        logging.error("Application instance tidak ditemukan.")
+        return 'Internal Server Error', 500
+        
+    try:
+        data = flask_request.get_json(force=True)
+    except Exception as e:
+        logging.error(f"Gagal parsing JSON request dari Telegram (Flask): {e}")
+        return 'Bad Request', 400
+
+    new_loop = None
+    try:
+        update = Update.de_json(data, current_application_instance.bot)
+        
+        # --- Tambahan Logging untuk Debugging Callback Query (seperti permintaan Anda) ---
+        if update.callback_query:
+            logging.info(f"CallbackQuery DITERIMA. Data: {update.callback_query.data}")
+        # --------------------------------------------------------------------------------
+        
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        
+        if not current_application_instance.initialized:
+            new_loop.run_until_complete(current_application_instance.initialize())
+            
+        new_loop.run_until_complete(current_application_instance.process_update(update)) 
+        
+        new_loop.close()
+        
+        logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
+        return 'OK', 200 
+        
+    except Exception as e:
+        if new_loop:
+             try:
+                 new_loop.close()
+             except:
+                 pass
+                 
+        asyncio.set_event_loop(None) 
+        logging.error(f"Error saat memproses Update: {e}")
+        return 'Internal Server Error', 500
