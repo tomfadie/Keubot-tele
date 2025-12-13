@@ -5,7 +5,6 @@ import re
 import json
 import asyncio
 import nest_asyncio 
-
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -16,9 +15,9 @@ from telegram.ext import (
     filters,
     ConversationHandler
 )
+from telegram.error import TelegramError
 
 # --- KONFIGURASI DAN STATES ---
-
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
@@ -45,10 +44,8 @@ KATEGORI_KELUAR = {
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
-# --- FUNGSI UTILITY ---
-
+# ... (Semua Fungsi Utility Tetap Sama) ...
 def send_to_make(data):
-    """Mengirim payload data ke webhook Make."""
     try:
         response = requests.post(MAKE_WEBHOOK_URL, json=data) 
         response.raise_for_status() 
@@ -113,7 +110,8 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS UTAMA (Semua fungsi async) ---
+
+# --- HANDLERS UTAMA ---
 
 async def start(update: Update, context):
     
@@ -133,35 +131,37 @@ async def start(update: Update, context):
     chat_id = update.effective_chat.id
     
     if update.message or update.callback_query:
+        
+        # 1. Hapus pesan yang memicu /start jika ada
+        if update.message:
+            try:
+                await update.message.delete()
+            except TelegramError:
+                pass
+        
+        # 2. Hapus/Jawab Callback Query
+        if update.callback_query:
+             try:
+                 await update.callback_query.answer() 
+                 await update.callback_query.message.delete()
+             except TelegramError:
+                 pass
+
+        # 3. Kirim pesan baru
         try:
-            # Mengirim pesan utama
             await context.bot.send_message(
                 chat_id=chat_id, 
                 text=text, 
                 reply_markup=get_menu_transaksi()
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
-            
-            if update.callback_query:
-                 try:
-                     await update.callback_query.answer() 
-                     await update.callback_query.message.delete()
-                 except Exception:
-                     # Menangkap error saat menjawab query atau menghapus pesan lama
-                     pass
-
         except Exception as e:
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
-            
-    if update.message:
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
             
     return CHOOSE_CATEGORY 
 
 async def cancel(update: Update, context):
+    # ... (Handler cancel tetap sama) ...
     if update.message:
         await update.message.reply_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
     elif update.callback_query:
@@ -180,12 +180,10 @@ async def cancel(update: Update, context):
 async def choose_route(update: Update, context):
     query = update.callback_query
     
-    # --- Defensive Coding: Menjawab Query ---
     try:
         await query.answer()
     except Exception as e:
         logging.warning(f"Gagal menjawab query di choose_route: {e}")
-    # ---------------------------------------
     
     data = query.data
     chat_id = query.message.chat_id
@@ -245,16 +243,17 @@ async def choose_category(update: Update, context):
     text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
     
     try:
+        # Kirim pesan nominal
         sent_message = await update.callback_query.message.reply_text(
             text, 
             reply_markup=get_menu_kembali('kembali_kategori'), 
             parse_mode='Markdown'
         )
+        # Hapus pesan kategori lama
         await update.callback_query.message.delete()
         context.user_data['nominal_request_message_id'] = sent_message.message_id
     except Exception as e:
         logging.error(f"Gagal mengirim/menghapus pesan di choose_category: {e}")
-        # Jika gagal, pastikan tetap mencatat state baru (fallback)
         context.user_data['nominal_request_message_id'] = None
 
     return GET_DESCRIPTION 
@@ -278,6 +277,7 @@ async def get_nominal(update: Update, context):
         if nominal <= 0:
             raise ValueError
     except (ValueError, TypeError):
+        # Hapus input user yang salah
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
         
         error_msg = await update.message.reply_text(
@@ -288,13 +288,15 @@ async def get_nominal(update: Update, context):
         
         return GET_DESCRIPTION 
 
+    # --- PERBAIKAN: Pastikan input user dan pesan bot nominal dihapus ---
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) # Hapus input nominal user
         if bot_message_to_delete_id:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id) # Hapus pesan bot "Sekarang, tuliskan jumlah nominal..."
             context.user_data.pop('nominal_request_message_id', None)
     except Exception:
         pass
+    # --------------------------------------------------------------------
     
     context.user_data['nominal'] = nominal
     
@@ -318,15 +320,18 @@ async def get_description(update: Update, context):
     keterangan = update.message.text
     context.user_data['keterangan'] = keterangan
     
+    # --- PERBAIKAN: Hapus input user dan pesan bot keterangan ---
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) # Hapus input keterangan user
         if bot_message_to_delete_id:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id) # Hapus pesan bot "Sekarang, tambahkan Keterangan..."
     except Exception:
         pass
+    # -------------------------------------------------------------
             
     preview_text = generate_preview(context.user_data)
     
+    # Pesan ini adalah pesan preview yang akan dihapus saat tombol Kirim/Ubah diklik
     await update.message.reply_text(
         preview_text,
         reply_markup=get_menu_preview(),
@@ -346,6 +351,7 @@ async def handle_kembali_actions(update: Update, context):
     chat_id = query.message.chat_id
     
     if action == 'kembali_kategori':
+        # ... (Logika kembali_kategori tetap sama) ...
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -358,6 +364,7 @@ async def handle_kembali_actions(update: Update, context):
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
+        # ... (Logika kembali_nominal tetap sama) ...
         text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
         text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
         
@@ -373,6 +380,7 @@ async def handle_kembali_actions(update: Update, context):
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
     
+    # Hapus pesan preview saat tombol diklik (baik Kirim maupun Ubah)
     try:
         await query.answer()
         await query.message.delete()
@@ -398,7 +406,7 @@ async def handle_preview_actions(update: Update, context):
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
-        success = send_to_make(payload) # Fungsi sinkron
+        success = send_to_make(payload) 
         
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
@@ -426,6 +434,7 @@ async def handle_preview_actions(update: Update, context):
         return await start(update, context)
         
     elif action == 'ubah_kategori':
+        # ... (Logika ubah_kategori tetap sama) ...
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -438,6 +447,7 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
+        # ... (Logika ubah_nominal tetap sama) ...
         context.user_data.pop('nominal', None) 
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
@@ -452,6 +462,7 @@ async def handle_preview_actions(update: Update, context):
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
+        # ... (Logika ubah_keterangan tetap sama) ...
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
@@ -472,57 +483,35 @@ try:
 except RuntimeError:
     pass 
 
-# Inisialisasi Flask App (Vercel akan mencari instance 'app')
 app = Flask(__name__)
 
-# Deklarasi global untuk Application instance
-application_instance = None 
+# NOTE: Hapus deklarasi global application_instance, inisialisasi dilakukan per request
 
 def init_application():
-    """Menginisialisasi Application dan Conversation Handler tanpa memanggil initialize()."""
-    global application_instance
+    """Menginisialisasi Application dan Conversation Handler."""
     
     if not TOKEN:
         return None
 
     try:
-        # Application.builder() harus dipanggil sebelum loop dibuat/diset.
         application = Application.builder().token(TOKEN).build()
         
         conv_handler = ConversationHandler(
-            entry_points=[
-                CommandHandler("start", start),
-            ],
+            entry_points=[CommandHandler("start", start)],
             states={
-                CHOOSE_CATEGORY: [
-                    CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')
-                ],
-                
-                GET_NOMINAL: [
-                    CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')
-                ],
-                
-                GET_DESCRIPTION: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
-                ],
-                
-                PREVIEW: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
-                    CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
-                ]
+                CHOOSE_CATEGORY: [CallbackQueryHandler(choose_route, pattern=r'^transaksi_(masuk|keluar|tabungan)$')],
+                GET_NOMINAL: [CallbackQueryHandler(choose_category, pattern=r'^(masuk|keluar)_.*$|^kembali_transaksi$')],
+                GET_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal), CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$')],
+                PREVIEW: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_description), CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),]
             },
-            fallbacks=[
-                CommandHandler("cancel", cancel),
-            ],
+            fallbacks=[CommandHandler("cancel", cancel)],
             per_user=True,
             per_chat=True,
             allow_reentry=True
         )
 
         application.add_handler(conv_handler)
-        logging.info("Aplikasi Telegram berhasil diinisialisasi.")
+        # logging.info("Aplikasi Telegram berhasil diinisialisasi.") # Log dihapus agar tidak duplikat
         return application
     
     except Exception as e:
@@ -532,15 +521,12 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask. Pola Loop Baru per Request + Policy."""
+    """Fungsi handler Vercel/Flask. Membuat instance baru dan loop baru per request."""
     
-    global application_instance
+    # 1. Selalu buat instance baru pada setiap request (MENGATASI "Event loop is closed")
+    current_application_instance = init_application() 
     
-    # 1. Lazy Loading/Re-initialization
-    if application_instance is None:
-        application_instance = init_application()
-    
-    if application_instance is None:
+    if current_application_instance is None:
         logging.error("Application instance tidak ditemukan.")
         return 'Internal Server Error', 500
         
@@ -550,41 +536,35 @@ def flask_webhook_handler():
         logging.error(f"Gagal parsing JSON request dari Telegram (Flask): {e}")
         return 'Bad Request', 400
 
+    new_loop = None
     try:
-        update = Update.de_json(data, application_instance.bot)
+        update = Update.de_json(data, current_application_instance.bot)
         
-        # --- PERBAIKAN KRITIS UNTUK FINAL EVENT LOOP ---
-        
-        # 1. Tentukan Event Loop Policy (Penting untuk thread-safety di serverless)
+        # 2. Re-inisialisasi Event Loop (Solusi 4.0)
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-        
-        # 2. Buat loop baru
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        # 3. Inisialisasi Kondisional (Mengatasi "Application was not initialized")
-        if not hasattr(application_instance, '_initialized') or not application_instance._initialized:
-            
-            # Panggil initialize di loop baru pada request pertama
-            new_loop.run_until_complete(application_instance.initialize())
-            
-            # Set flag agar tidak dipanggil lagi
-            application_instance._initialized = True 
-            logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
-            
-        # 4. Jalankan pemrosesan update di loop baru
-        new_loop.run_until_complete(application_instance.process_update(update)) 
+        # 3. Inisialisasi PTB di loop baru (karena instance baru)
+        new_loop.run_until_complete(current_application_instance.initialize())
         
-        # 5. Tutup loop setelah selesai
+        # 4. Jalankan update
+        new_loop.run_until_complete(current_application_instance.process_update(update)) 
+        
+        # 5. Tutup loop
         new_loop.close()
-        # ------------------------------------------------------
-
+        
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 
         
     except Exception as e:
-        # Set loop kembali ke None saat error untuk menghindari konflik pada request berikutnya
+        # PENTING: Tutup loop jika terjadi error juga
+        if new_loop:
+             try:
+                 new_loop.close()
+             except:
+                 pass
+                 
         asyncio.set_event_loop(None) 
-        
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
