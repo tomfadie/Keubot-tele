@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/webhook.py": {
-      "runtime": "@vercel/python@3.9.7"
+      "runtime": "@vercel/python@3.9.11"
     }
   },
   "routes": [
@@ -13,6 +13,7 @@
     }
   ]
 }
+
 
 
 
