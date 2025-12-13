@@ -465,6 +465,7 @@ def init_application():
         application = Application.builder().token(TOKEN).build()
         
         # --- PERBAIKAN 1: Inisialisasi loop untuk Application ---
+        # Menggunakan run_until_complete untuk memastikan initialize berjalan di loop saat ini
         loop = asyncio.get_event_loop()
         loop.run_until_complete(application.initialize())
         # ----------------------------------------------------
@@ -534,11 +535,15 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, application_instance.bot)
         
-        # --- PERBAIKAN 2: Menggunakan loop.run_until_complete ---
-        # Menjalankan fungsi asinkron di thread sinkron yang dipicu oleh Vercel
-        loop = asyncio.get_event_loop()
+        # --- PERBAIKAN 2: Menggunakan loop.run_until_complete yang lebih aman ---
+        # Mencoba mendapatkan loop yang berjalan, jika tidak, mendapatkan loop yang ada.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+            
         loop.run_until_complete(application_instance.process_update(update)) 
-        # -----------------------------------------------------------------
+        # ----------------------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 
