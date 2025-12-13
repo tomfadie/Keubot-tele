@@ -148,35 +148,31 @@ async def start(update: Update, context):
     
     if update.message or update.callback_query:
         try:
-        await context.bot.send_message(
-            chat_id=chat_id, 
-            text=text, 
-            reply_markup=get_menu_transaksi()
-        )
-        logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
-    except Exception as e:
-        # Menangkap RuntimeError, tetapi TIDAK menghentikan alur return
-        logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
-        # Tambahkan pesan fallback yang bisa dikirim user secara manual
-        await context.bot.send_message(
-             chat_id=chat_id, 
-             text="Gagal memuat menu otomatis. Silakan klik /start lagi."
-         )
-    
-    # 2. Hapus pesan yang memanggil /start (jika ada)
+            # ---> DITAMBAH INDENTASI DI SINI (Baris 151)
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=text, 
+                reply_markup=get_menu_transaksi()
+            )
+            logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
+            
+            # ---> DITAMBAH INDENTASI DI SINI (untuk blok if update.callback_query)
+            if update.callback_query:
+                 try:
+                     await update.callback_query.answer() 
+                     await update.callback_query.message.delete()
+                 except Exception:
+                     # Menangkap error saat menjawab query atau menghapus pesan lama
+                     pass
+
+        except Exception as e:
+            logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
+            
     if update.message:
         try:
             await update.message.delete()
         except Exception:
             pass
-            
-    # 3. Hapus pesan query lama (jika dari tombol kembali)
-    if update.callback_query:
-         try:
-             await update.callback_query.answer() 
-             await update.callback_query.message.delete()
-         except Exception:
-             pass
             
     return CHOOSE_CATEGORY 
 
@@ -657,6 +653,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
