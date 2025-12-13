@@ -19,24 +19,19 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-# Mengambil Token dari Environment Variable Vercel
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-# URL Webhook Make Anda (Pastikan ini benar)
 MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
 
-# Konfigurasi logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
-# Definisi Menu Kategori
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
     'Lainnya': 'masuk_lainnya'
@@ -50,8 +45,8 @@ KATEGORI_KELUAR = {
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
-# --- FUNGSI UTILITY ---
-
+# --- FUNGSI UTILITY & HANDLER (Tidak Berubah) ---
+# ... (Semua fungsi send_to_make, format_nominal, generate_preview, menu, dan Aysnc Handlers tetap sama) ...
 def send_to_make(data):
     """Mengirim payload data ke webhook Make."""
     try:
@@ -118,8 +113,6 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS UTAMA (Semua fungsi async) ---
-
 async def start(update: Update, context):
     
     user = update.effective_user 
@@ -147,7 +140,6 @@ async def start(update: Update, context):
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
             if update.callback_query:
-                 # Panggil answer() tanpa await, karena kita sudah di async context
                  await update.callback_query.answer() 
                  try:
                      await update.callback_query.message.delete()
@@ -155,6 +147,7 @@ async def start(update: Update, context):
                      pass
 
         except Exception as e:
+            # PENTING: Log error pengiriman di sini (ini log yang kita lihat)
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
     if update.message:
@@ -204,7 +197,6 @@ async def choose_route(update: Update, context):
 
 async def choose_category(update: Update, context):
     query = update.callback_query
-    # HINDARI ERROR: Pastikan answer() selalu di awal handler callback
     await query.answer() 
     data = query.data
     
@@ -352,7 +344,6 @@ async def handle_preview_actions(update: Update, context):
     
     if action == 'aksi_kirim':
         
-        # 1. Persiapan Payload
         payload = {
             'user_id': context.user_data.get('user_id'),
             'first_name': context.user_data.get('first_name'),
@@ -367,10 +358,8 @@ async def handle_preview_actions(update: Update, context):
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
-        # Kirim data ke Make (ini adalah fungsi sinkron)
         success = send_to_make(payload)
         
-        # 2. Membuat Teks Konfirmasi
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
         kategori_nama = payload.get('kategori_nama', 'N/A')
@@ -387,13 +376,10 @@ async def handle_preview_actions(update: Update, context):
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
-        # 3. Kirim Pesan Konfirmasi
         await context.bot.send_message(chat_id, response_text, parse_mode='Markdown')
         
-        # 4. Clear data sementara
         context.user_data.clear()
         
-        # 5. AKHIRI PERCAKAPAN 
         return ConversationHandler.END
         
     elif action == 'ubah_transaksi':
@@ -440,7 +426,7 @@ async def handle_preview_actions(update: Update, context):
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
-# Terapkan patch nest_asyncio
+# Terapkan patch nest_asyncio di scope global
 try:
     nest_asyncio.apply()
 except RuntimeError:
@@ -453,7 +439,7 @@ app = Flask(__name__)
 application_instance = None 
 
 def init_application():
-    """Menginisialisasi Application dan Conversation Handler tanpa memanggil initialize()."""
+    """Menginisialisasi Application, Handlers, dan melakukan initialize sinkron."""
     global application_instance
     
     if not TOKEN:
@@ -462,10 +448,13 @@ def init_application():
     try:
         application = Application.builder().token(TOKEN).build()
         
-        # --- PERBAIKAN: Initialize TIDAK dijalankan di sini ---
-        # Initialize akan dipanggil secara kondisional di flask_webhook_handler
-        
-        # --- CONVERSATION HANDLER ---
+        # --- PERBAIKAN 1: Kembalikan Initialize ke sini ---
+        # Ini akan dijalankan di event loop yang sama di mana nest_asyncio diterapkan.
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application.initialize()) 
+        logging.info("Aplikasi Telegram berhasil diinisialisasi secara sinkron.")
+        # ----------------------------------------------------
+
         conv_handler = ConversationHandler(
             entry_points=[
                 CommandHandler("start", start),
@@ -499,7 +488,6 @@ def init_application():
         )
 
         application.add_handler(conv_handler)
-        logging.info("Aplikasi Telegram berhasil diinisialisasi.")
         return application
     
     except Exception as e:
@@ -509,7 +497,7 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask. Membuat loop baru per request."""
+    """Fungsi handler Vercel/Flask. Menggunakan run_until_complete pada event loop yang di-patch."""
     
     global application_instance
     
@@ -530,35 +518,21 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, application_instance.bot)
         
-        # --- PERBAIKAN KRITIS UNTUK FINAL EVENT LOOP ---
+        # --- PERBAIKAN 2: Gunakan loop yang di-patch dan jalankan update ---
         
-        # 1. Buat loop baru
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
+        # Coba dapatkan loop yang berjalan, jika tidak, dapatkan loop yang ada (yang sudah di-patch)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+            
+        loop.run_until_complete(application_instance.process_update(update)) 
         
-        # 2. Inisialisasi Kondisional (Mengatasi "Application was not initialized")
-        if not hasattr(application_instance, '_initialized') or not application_instance._initialized:
-            
-            # Panggil initialize di loop baru pada request pertama
-            new_loop.run_until_complete(application_instance.initialize())
-            
-            # Set flag agar tidak dipanggil lagi
-            application_instance._initialized = True 
-            logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
-            
-        # 3. Jalankan pemrosesan update di loop baru
-        new_loop.run_until_complete(application_instance.process_update(update)) 
-        
-        # 4. Tutup loop setelah selesai
-        new_loop.close()
-        # ------------------------------------------------------
+        # ------------------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
         return 'OK', 200 
         
     except Exception as e:
-        # PENTING: Jika terjadi error di dalam loop, set loop kembali ke None
-        asyncio.set_event_loop(None) 
-        
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
