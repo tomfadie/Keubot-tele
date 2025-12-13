@@ -47,7 +47,7 @@ KATEGORI_KELUAR = {
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
-# --- FUNGSI UTILITY (Tidak Berubah) ---
+# --- FUNGSI UTILITY ---
 
 def send_to_make(data):
     """Mengirim payload data ke webhook Make."""
@@ -115,7 +115,7 @@ def get_menu_kembali(callback_data):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# --- HANDLERS UTAMA (Tidak Berubah Logika) ---
+# --- HANDLERS UTAMA ---
 
 async def start(update: Update, context):
     
@@ -185,11 +185,13 @@ async def choose_route(update: Update, context):
     data = query.data
     chat_id = query.message.chat_id
     
+    # --- KRITIS: Jawab query untuk mencegah timeout dan error NoneType ---
     try:
         await query.answer()
         logging.info(f"[{data}] Callback Query dijawab.")
     except Exception as e:
-        logging.warning(f"[{data}] Gagal menjawab query: {e}")
+        logging.warning(f"[{data}] Gagal menjawab query: {e}. Melanjutkan proses.")
+    # ---------------------------------------------------------------------
     
     if data == 'transaksi_masuk':
         context.user_data['transaksi'] = 'Masuk' 
@@ -204,13 +206,15 @@ async def choose_route(update: Update, context):
         context.user_data['kategori_dict'] = KATEGORI_KELUAR 
         text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
     else:
-        await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
+        # Fallback jika data tidak cocok
+        await context.bot.send_message(chat_id, "Terjadi kesalahan rute. Silakan mulai ulang dengan /start.")
         return ConversationHandler.END
     
     logging.info(f"[{data}] Memproses Transaksi: {context.user_data.get('transaksi')}")
 
     try:
-        await query.edit_message_text(
+        # EDIT PESAN (Bukan DELETE dan REPLY)
+        await query.message.edit_text(
             text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
@@ -238,6 +242,8 @@ async def choose_route(update: Update, context):
 
 async def choose_category(update: Update, context):
     query = update.callback_query
+    
+    # --- KRITIS: Jawab query sebelum logika apapun ---
     try:
         await query.answer()
     except Exception:
@@ -257,12 +263,15 @@ async def choose_category(update: Update, context):
     text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
     
     try:
-        sent_message = await update.callback_query.message.reply_text(
-            text, 
+        # Delete pesan kategori lama
+        await update.callback_query.message.delete()
+        
+        sent_message = await context.bot.send_message(
+            chat_id=query.message.chat_id, 
+            text=text, 
             reply_markup=get_menu_kembali('kembali_kategori'), 
             parse_mode='Markdown'
         )
-        await update.callback_query.message.delete()
         context.user_data['nominal_request_message_id'] = sent_message.message_id
     except Exception as e:
         logging.error(f"Gagal mengirim/menghapus pesan di choose_category: {e}")
@@ -289,8 +298,12 @@ async def get_nominal(update: Update, context):
         if nominal <= 0:
             raise ValueError
     except (ValueError, TypeError):
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
-        
+        # Hapus pesan user yang tidak valid
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        except Exception:
+            pass
+            
         error_msg = await update.message.reply_text(
             "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
             parse_mode='Markdown'
@@ -351,6 +364,8 @@ async def get_description(update: Update, context):
 
 async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
+    
+    # --- KRITIS: Jawab query sebelum delete ---
     try:
         await query.answer()
         await query.message.delete()
@@ -389,9 +404,9 @@ async def handle_kembali_actions(update: Update, context):
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
     
+    # --- KRITIS: Jawab query sebelum delete ---
     try:
         await query.answer()
-        # Penghapusan Pesan Review
         await query.message.delete() 
     except Exception:
         pass
@@ -575,15 +590,11 @@ def flask_webhook_handler():
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        # --- PERBAIKAN KRITIS: Hanya panggil initialize/post_init di loop baru ---
-        # Ini mengatasi AttributeError: 'Application' object has no attribute 'initialized'
-        # dan memastikan PTB disiapkan untuk setiap request serverless.
-        
+        # Panggil initialize dan post_init untuk memastikan Application siap di serverless
         new_loop.run_until_complete(current_application_instance.initialize())
         new_loop.run_until_complete(current_application_instance.post_init())
         
-        # ------------------------------------------------------------------------
-        
+        # PROSES UPDATE
         new_loop.run_until_complete(current_application_instance.process_update(update)) 
         
         new_loop.close()
