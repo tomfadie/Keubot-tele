@@ -30,7 +30,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Perubahan Nama State untuk Klarifikasi
+# Definisi State
 SELECT_TRANSACTION, SELECT_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
 KATEGORI_MASUK = {
@@ -58,6 +58,7 @@ def send_to_make(data):
         return False
 
 def format_nominal(nominal):
+    # Mengubah format angka menjadi R.xxx.xxx
     return "{:,.0f}".format(nominal).replace(",", ".")
 
 def generate_preview(user_data):
@@ -143,6 +144,7 @@ async def start(update: Update, context):
         if update.callback_query:
              try:
                  await update.callback_query.answer() 
+                 # Hapus pesan lama hanya jika itu adalah callback dari ConversationHandler sebelumnya
                  await update.callback_query.message.delete()
              except Exception:
                  pass
@@ -179,12 +181,15 @@ async def cancel(update: Update, context):
 async def choose_route(update: Update, context):
     query = update.callback_query
     
+    # --- Logging dan Jawaban Query ---
+    data = query.data
     try:
         await query.answer()
+        logging.info(f"[{data}] Callback Query dijawab.")
     except Exception as e:
-        logging.warning(f"Gagal menjawab query di choose_route: {e}")
+        logging.warning(f"[{data}] Gagal menjawab query: {e}")
+    # ----------------------------------
     
-    data = query.data
     chat_id = query.message.chat_id
     
     if data == 'transaksi_masuk':
@@ -203,21 +208,36 @@ async def choose_route(update: Update, context):
         await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
         return ConversationHandler.END
 
+    logging.info(f"[{data}] Memproses Transaksi: {context.user_data.get('transaksi')}")
+
     try:
+        # PENTING: Coba edit pesan untuk menampilkan menu kategori
         await query.edit_message_text(
             text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
-    except Exception as e:
-        logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
+        logging.info(f"[{data}] Pesan berhasil diedit.")
+    except TelegramError as e:
+        # Tangani jika pesan tidak dapat diedit (misalnya, terlalu tua atau error lain)
+        logging.error(f"[{data}] Gagal edit pesan TelegramError: {e}. Mengirim pesan baru sebagai fallback.")
         await context.bot.send_message(
             chat_id,
             text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
+    except Exception as e:
+         # Tangani error tak terduga
+         logging.error(f"[{data}] Error tak terduga saat edit pesan: {e}. Mengirim pesan baru sebagai fallback.")
+         await context.bot.send_message(
+            chat_id,
+            text, 
+            reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
+            parse_mode='Markdown'
+        )
         
+    logging.info(f"[{data}] Pindah state ke SELECT_CATEGORY.")
     return SELECT_CATEGORY
 
 async def choose_category(update: Update, context):
@@ -510,6 +530,7 @@ def init_application():
         )
 
         application.add_handler(conv_handler)
+        logging.info("Aplikasi Telegram berhasil diinisialisasi.")
         return application
     
     except Exception as e:
@@ -521,7 +542,6 @@ def init_application():
 def flask_webhook_handler():
     """Fungsi handler Vercel/Flask. Membuat instance baru dan loop baru per request."""
     
-    # 1. Selalu buat instance baru pada setiap request
     current_application_instance = init_application() 
     
     if current_application_instance is None:
@@ -538,18 +558,14 @@ def flask_webhook_handler():
     try:
         update = Update.de_json(data, current_application_instance.bot)
         
-        # 2. Re-inisialisasi Event Loop
+        # Penanganan Event Loop
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        # 3. Inisialisasi PTB di loop baru (karena instance baru)
         new_loop.run_until_complete(current_application_instance.initialize())
-        
-        # 4. Jalankan update
         new_loop.run_until_complete(current_application_instance.process_update(update)) 
         
-        # 5. Tutup loop
         new_loop.close()
         
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
