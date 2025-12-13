@@ -9,9 +9,10 @@
   "routes": [
     {
       "src": "/webhook",
-      "dest": "main.py", 
+      "dest": "main.py:handler", 
       "methods": ["POST"]
     }
   ]
 }
+
 
