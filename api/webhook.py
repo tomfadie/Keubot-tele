@@ -73,7 +73,7 @@ def generate_preview(user_data):
     preview_text += f"*Kategori:* {kategori_nama}\n"
     preview_text += f"*Nominal:* Rp {nominal_formatted}\n"
     preview_text += f"*Keterangan:* {keterangan}\n\n"
-    preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
+    preview_text += f"*{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}*"
     return preview_text
 
 def debug_check_ids(context):
@@ -362,7 +362,7 @@ async def get_nominal(update: Update, context):
     
     context.user_data['nominal'] = nominal
     
-    text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat.\n\n"
+    text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{kategori_nama}*.\n\n"
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
     
     sent_message = await update.message.reply_text(
@@ -384,26 +384,27 @@ async def get_description(update: Update, context):
     
     # --- PERBAIKAN: Membalik Urutan Penghapusan ---
 
-    # 1. Hapus pesan Bot Request Lama (Permintaan Keterangan) - Prioritas 1
-    if bot_message_to_delete_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request)")
-        except Exception as e:
-            # Mencatat kegagalan spesifik seperti Event loop is closed
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request). Error: {e}")
-            pass # Lanjut ke penghapusan berikutnya
-
-    # 2. Hapus pesan User Input (Keterangan) - Prioritas 2
+   # 1. Hapus pesan User Input (Keterangan) - PRIORITAS 1 (Pesan yang baru masuk)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Deskripsi)")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Deskripsi). Error: {e}")
         pass
+        
+    # 2. Hapus pesan Bot Request Lama (Permintaan Keterangan) - PRIORITAS 2
+    if bot_message_to_delete_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request)")
+        except Exception as e:
+            # Karena masalah Event Loop sudah teratasi, logging ini hanya untuk error lain.
+            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request). Error: {e}")
+            pass
     
     # ----------------------------------------------------
-            
+    keterangan = update.message.text
+    context.user_data['keterangan'] = keterangan        
     preview_text = generate_preview(context.user_data)
     
     await update.message.reply_text(
@@ -688,6 +689,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
