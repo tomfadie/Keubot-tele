@@ -337,9 +337,9 @@ async def get_nominal(update: Update, context):
     # 1. Ambil ID pesan bot permintaan nominal lama. 
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None) 
     
-    # 2. Hapus pesan User (Input Nominal) secepatnya (UPAYA TERBAIK UNTUK BUG USER DELETION)
+    # 2. Hapus pesan User (Input Nominal) secepatnya (UPAYA TERBAIK)
     try:
-        await update.message.delete() 
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Input Nominal).")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Nominal). Error: {e}")
@@ -367,7 +367,7 @@ async def get_nominal(update: Update, context):
         # --- BLOK ERROR VALIDASI ---
         logging.error(f"Gagal memvalidasi nominal: {e}")
         
-        # Hapus pesan Bot Permintaan Nominal LAMA (Solusi Bug)
+        # Hapus pesan Bot Permintaan Nominal LAMA
         if bot_message_to_delete_id:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
@@ -416,19 +416,17 @@ async def get_nominal(update: Update, context):
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
-    
-    # Ambil teks keterangan dari pesan pengguna
     keterangan = update.message.text.strip()
 
-    # 1. Hapus pesan Input Keterangan dari User (UPAYA TERBAIK UNTUK BUG USER DELETION)
+    # 1. Hapus pesan Input Keterangan dari User (UPAYA TERBAIK)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Input Keterangan).")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Keterangan). Error: {e}")
         pass
     
-    # 2. Hapus pesan permintaan Keterangan lama dari Bot (Mengatasi Bug 3)
+    # 2. Hapus pesan permintaan Keterangan lama dari Bot (Mengatasi Bug yang terlihat)
     description_request_id = context.user_data.pop('description_request_message_id', None)
     if description_request_id:
         try:
@@ -789,6 +787,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
