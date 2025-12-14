@@ -331,23 +331,17 @@ async def choose_category(update: Update, context):
     return GET_DESCRIPTION
 
 async def get_nominal(update: Update, context):
-    """
-    Memproses input teks nominal dari pengguna, memvalidasi, melakukan cleanup pesan, 
-    dan melanjutkan ke permintaan Keterangan atau kembali ke error.
-    """
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
     # 1. Ambil ID pesan bot permintaan nominal lama. 
-    # ID ini harus dihapus baik di skenario sukses maupun gagal (error).
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None) 
     
-    # 2. Hapus pesan User (Input Nominal) secepatnya (Mengatasi Bug 1 & 2)
+    # 2. Hapus pesan User (Input Nominal) secepatnya (UPAYA TERBAIK UNTUK BUG USER DELETION)
     try:
         await update.message.delete() 
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Input Nominal).")
     except Exception as e:
-        # Jika gagal dihapus (kemungkinan besar masalah timing Vercel/Flask), log saja.
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Nominal). Error: {e}")
         pass
         
@@ -362,12 +356,9 @@ async def get_nominal(update: Update, context):
             
     # --- Validasi Input Nominal ---
     try:
-        # Menghilangkan semua karakter non-digit
         nominal_str = re.sub(r'\D', '', update.message.text)
-        
         if not nominal_str:
             raise ValueError("Input kosong atau hanya simbol.")
-             
         nominal = int(nominal_str)
         if nominal <= 0:
             raise ValueError("Nominal harus lebih besar dari nol.")
@@ -376,7 +367,7 @@ async def get_nominal(update: Update, context):
         # --- BLOK ERROR VALIDASI ---
         logging.error(f"Gagal memvalidasi nominal: {e}")
         
-        # SOLUSI BUG: Hapus pesan Bot Permintaan Nominal LAMA
+        # Hapus pesan Bot Permintaan Nominal LAMA (Solusi Bug)
         if bot_message_to_delete_id:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
@@ -393,7 +384,7 @@ async def get_nominal(update: Update, context):
         )
         context.user_data['error_message_id'] = error_msg.message_id
         
-        return GET_DESCRIPTION # Tetap di state yang sama
+        return GET_DESCRIPTION 
 
     # --- Blok Nominal Valid (Lanjutan) ---
     
@@ -428,8 +419,16 @@ async def get_description(update: Update, context):
     
     # Ambil teks keterangan dari pesan pengguna
     keterangan = update.message.text.strip()
+
+    # 1. Hapus pesan Input Keterangan dari User (UPAYA TERBAIK UNTUK BUG USER DELETION)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Keterangan). Error: {e}")
+        pass
     
-    # 1. Hapus pesan permintaan Keterangan lama dari Bot (Mengatasi Bug 3)
+    # 2. Hapus pesan permintaan Keterangan lama dari Bot (Mengatasi Bug 3)
     description_request_id = context.user_data.pop('description_request_message_id', None)
     if description_request_id:
         try:
@@ -439,14 +438,6 @@ async def get_description(update: Update, context):
             logging.warning(f"Gagal menghapus pesan permintaan keterangan lama ID: {description_request_id}. Error: {e}")
             pass
             
-    # 2. Hapus pesan Input Keterangan dari User (Mengatasi bug serupa di sini)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Keterangan). Error: {e}")
-        pass
-        
     # --- Blok Penyimpanan Data ---
     context.user_data['keterangan'] = keterangan
     # ----------------------------
@@ -798,6 +789,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
