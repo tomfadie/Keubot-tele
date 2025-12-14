@@ -162,10 +162,13 @@ async def start(update: Update, context):
         'error_message_id'
     ]
     
+    delete_tasks_start = []
+    
     # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
     if update.callback_query:
         try:
-            await update.callback_query.message.delete()
+            # Tambahkan penghapusan pesan callback ke tasks
+            delete_tasks_start.append(update.callback_query.message.delete())
         except Exception:
             pass
         try:
@@ -176,12 +179,12 @@ async def start(update: Update, context):
     # Hapus pesan /start user
     if update.message:
         try:
-            await update.message.delete()
+            # Tambahkan penghapusan pesan user ke tasks
+            delete_tasks_start.append(update.message.delete())
         except Exception:
             pass
             
     # Hapus pesan BOT lama
-    delete_tasks_start = []
     for key in ids_to_delete_keys:
         msg_id = context.user_data.pop(key, None)
         if msg_id:
@@ -342,46 +345,26 @@ async def choose_category(update: Update, context):
 
     return GET_DESCRIPTION
 
-# --- FUNGSI GET_NOMINAL YANG SUDAH DIREVISI DENGAN ASYNCIO.GATHER ---
+# --- FUNGSI get_nominal YANG DIREVISI ---
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
-    # 1. Ambil ID pesan bot permintaan nominal lama. 
-    bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None) 
+    # 1. Ambil ID pesan bot permintaan nominal lama dan pesan error lama. 
+    bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
+    error_message_id = context.user_data.pop('error_message_id', None) 
     
-    # --- FUNGSI ASYNC UNTUK PENGHAPUSAN (INNER FUNCTION UNTUK CLEANUP) ---
-    async def cleanup_messages_nominal():
-        delete_tasks = []
-        
-        # Hapus pesan User Input Nominal (KRITIS)
-        delete_tasks.append(
-            context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+    # 2. INISIASI TASKS UNTUK CLEANUP (Task ini akan dieksekusi sebentar lagi)
+    cleanup_tasks = [
+        # KRITIS: Pesan User Input Nominal
+        context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+    ]
+    
+    if error_message_id:
+        # Pesan Error LAMA (Jika ada dari percobaan sebelumnya yang gagal)
+        cleanup_tasks.append(
+            context.bot.delete_message(chat_id=chat_id, message_id=error_message_id)
         )
-        
-        # Hapus Pesan Error LAMA
-        error_message_id = context.user_data.pop('error_message_id', None)
-        if error_message_id:
-            delete_tasks.append(
-                context.bot.delete_message(chat_id=chat_id, message_id=error_message_id)
-            )
-
-        # Hapus Pesan Bot Permintaan Nominal LAMA
-        if bot_message_to_delete_id:
-            delete_tasks.append(
-                context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            )
-
-        # Jalankan semua penghapusan secara bersamaan
-        if delete_tasks:
-            try:
-                # return_exceptions=True memungkinkan operasi lain tetap berjalan jika satu gagal
-                await asyncio.gather(*delete_tasks, return_exceptions=True)
-                logging.info(f"Cleanup Nominal selesai untuk user ID: {user_message_id}.")
-            except Exception as e:
-                logging.warning(f"Cleanup Nominal gagal: {e}")
-                pass
-    # -------------------------------------------------------------------
             
     # --- Validasi Input Nominal ---
     try:
@@ -396,10 +379,20 @@ async def get_nominal(update: Update, context):
         # --- BLOK ERROR VALIDASI ---
         logging.error(f"Gagal memvalidasi nominal: {e}")
         
-        # JALANKAN CLEANUP AGGRESIF sebelum mengirim pesan error
-        await cleanup_messages_nominal() 
+        # Tambahkan pesan Bot Permintaan Nominal LAMA ke tasks (karena gagal, bot lama perlu dihapus)
+        if bot_message_to_delete_id:
+            cleanup_tasks.append(
+                context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            )
         
-        # Kirim pesan Error baru (pesan ini TIDAK akan dimasukkan ke cleanup_messages_nominal karena dikirim setelah cleanup)
+        # JALANKAN CLEANUP AGGRESIF SEBELUM RESPON BARU DIKIRIM
+        try:
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            logging.info(f"Cleanup Nominal (ERROR PATH) selesai: {len(cleanup_tasks)} tasks terkirim.")
+        except Exception:
+            pass # Ignore cleanup errors
+        
+        # Kirim pesan Error baru
         error_msg = await context.bot.send_message(
             chat_id,
             "⚠️ Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
@@ -407,12 +400,22 @@ async def get_nominal(update: Update, context):
         )
         context.user_data['error_message_id'] = error_msg.message_id
         
-        return GET_DESCRIPTION # Tetap di state yang sama
+        return GET_DESCRIPTION 
 
     # --- Blok Nominal Valid (Lanjutan) ---
     
+    # Tambahkan pesan Bot Permintaan Nominal LAMA ke tasks (karena sukses, bot lama perlu dihapus)
+    if bot_message_to_delete_id:
+        cleanup_tasks.append(
+            context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+        )
+        
     # JALANKAN CLEANUP AGGRESIF (SUKSES PATH)
-    await cleanup_messages_nominal()
+    try:
+        await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+        logging.info(f"Cleanup Nominal (SUCCESS PATH) selesai: {len(cleanup_tasks)} tasks terkirim.")
+    except Exception:
+        pass # Ignore cleanup errors
             
     context.user_data['nominal'] = nominal
     
@@ -430,7 +433,7 @@ async def get_nominal(update: Update, context):
     
     return PREVIEW
     
-# --- FUNGSI GET_DESCRIPTION YANG SUDAH DIREVISI DENGAN ASYNCIO.GATHER ---
+# --- FUNGSI get_description YANG DIREVISI ---
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
@@ -440,40 +443,31 @@ async def get_description(update: Update, context):
     description_request_id = context.user_data.pop('description_request_message_id', None)
     menu_message_id = context.user_data.pop('menu_message_id', None)
     
-    # --- FUNGSI ASYNC UNTUK PENGHAPUSAN (INNER FUNCTION UNTUK CLEANUP) ---
-    async def cleanup_messages_description():
-        delete_tasks = []
+    # 2. INISIASI TASKS UNTUK CLEANUP (Eksekusi segera)
+    cleanup_tasks = [
+        # KRITIS: Hapus pesan Input Keterangan dari User
+        context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+    ]
         
-        # Hapus pesan Input Keterangan dari User (KRITIS)
-        delete_tasks.append(
-            context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+    # Hapus pesan permintaan Keterangan lama dari Bot
+    if description_request_id:
+        cleanup_tasks.append(
+            context.bot.delete_message(chat_id=chat_id, message_id=description_request_id)
         )
-        
-        # Hapus pesan permintaan Keterangan lama dari Bot
-        if description_request_id:
-            delete_tasks.append(
-                context.bot.delete_message(chat_id=chat_id, message_id=description_request_id)
-            )
 
-        # Hapus pesan PREVIEW lama (jika ada dari opsi 'Ubah Keterangan')
-        if menu_message_id:
-            delete_tasks.append(
-                context.bot.delete_message(chat_id=chat_id, message_id=menu_message_id)
-            )
+    # Hapus pesan PREVIEW lama (jika ada dari opsi 'Ubah Keterangan')
+    if menu_message_id:
+        cleanup_tasks.append(
+            context.bot.delete_message(chat_id=chat_id, message_id=menu_message_id)
+        )
 
-        # Jalankan semua penghapusan secara bersamaan
-        if delete_tasks:
-            try:
-                await asyncio.gather(*delete_tasks, return_exceptions=True)
-                logging.info(f"Cleanup Description selesai untuk user ID: {user_message_id}.")
-            except Exception as e:
-                logging.warning(f"Cleanup Description gagal: {e}")
-                pass
-                
-    # -------------------------------------------------------------------
-    
     # JALANKAN CLEANUP AGGRESIF
-    await cleanup_messages_description()
+    try:
+        # Jalankan semua penghapusan secara bersamaan
+        await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+        logging.info(f"Cleanup Description selesai: {len(cleanup_tasks)} tasks terkirim.")
+    except Exception:
+        pass # Ignore cleanup errors
             
     # --- Blok Penyimpanan Data ---
     context.user_data['keterangan'] = keterangan
