@@ -133,13 +133,17 @@ async def start(update: Update, context):
 
     # --- PERBAIKAN: Hapus Pesan Fallback Lama jika ada ---
     chat_id = update.effective_chat.id
-    fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
+    # Mengambil dan menghapus ID pesan fallback dari user_data
+    fallback_id_to_delete = context.user_data.pop('fallback_message_id', None) 
+    
     if fallback_id_to_delete:
         try:
+            # Mencoba menghapus pesan fallback yang dikirim di sesi gagal sebelumnya
             await context.bot.delete_message(chat_id=chat_id, message_id=fallback_id_to_delete)
             logging.info(f"Berhasil menghapus pesan fallback lama ID: {fallback_id_to_delete}")
-        except Exception:
-            logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_id_to_delete}")
+        except Exception as e:
+            # PENTING: Menangkap dan mencatat error spesifik (misalnya Event loop is closed)
+            logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_id_to_delete}. Error: {e}")
             pass
     # ----------------------------------------------------
 
@@ -687,6 +691,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
