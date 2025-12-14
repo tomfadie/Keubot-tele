@@ -5,6 +5,7 @@ import re
 import json
 import asyncio
 import nest_asyncio
+from datetime import timedelta # <--- TAMBAHAN KRITIS UNTUK IDLE TIMEOUT
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,19 +20,23 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-TOKEN = os.getenv("BOT_TOKEN")
+# Pastikan Anda telah mengatur BOT_TOKEN di environment variable (misalnya di Vercel)
+TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96"
+# Ganti dengan URL Make/Integromat/Zapier Webhook Anda yang sebenarnya
+MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
+# Definisi States (Langkah Percakapan)
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
+# Definisi Kategori
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah',
     'Lainnya': 'masuk_lainnya'
@@ -76,18 +81,6 @@ def generate_preview(user_data):
     preview_text += f"`{transaksi} Rp{nominal_formatted} {kategori_nama} {keterangan}`"
     return preview_text
 
-def debug_check_ids(context):
-    """Mencetak ID pesan yang seharusnya dihapus untuk debugging."""
-    chat_id = context._chat_id
-    nominal_id = context.user_data.get('nominal_request_message_id')
-    
-    if nominal_id:
-        logging.info(f"DEBUG: nominal_request_message_id = {nominal_id} (Chat: {chat_id}). ID siap dihapus.")
-    else:
-        logging.warning(f"DEBUG: nominal_request_message_id TIDAK DITEMUKAN atau None.")
-    return nominal_id
-# END FUNGSI DEBUGGING
-
 def get_menu_transaksi():
     keyboard = [
         [InlineKeyboardButton("✅ Masuk", callback_data='transaksi_masuk')],
@@ -128,10 +121,7 @@ def get_menu_kembali(callback_data):
 # --- HANDLERS UTAMA (Semua fungsi async) ---
 
 async def handle_unmatched_text(update: Update, context):
-    """
-    Handler untuk teks yang tidak cocok. Dipicu ketika ConversationHandler
-    berada di END (misalnya, setelah idle terlalu lama).
-    """
+    """Handler untuk teks yang tidak cocok setelah ConversationHandler berakhir."""
     await update.message.reply_text(
         "Maaf, sesi pencatatan Anda telah berakhir (mungkin karena idle terlalu lama). "
         "Silakan mulai ulang dengan perintah /start."
@@ -199,7 +189,6 @@ async def start(update: Update, context):
             logging.info("Cleanup pesan BOT lama di START selesai.")
         except Exception:
             pass
-
     # ----------------------------------------------------
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
@@ -251,10 +240,9 @@ async def cancel(update: Update, context):
 async def choose_route(update: Update, context):
     query = update.callback_query
     
-    # PINDAHKAN DEFINISI VARIABEL KE AWAL FUNGSI
     data = query.data
     chat_id = query.message.chat_id
-    text = "" # Inisialisasi variabel text
+    text = "" 
     
     # --- Defensive Coding: Menjawab Query ---
     try:
@@ -276,7 +264,6 @@ async def choose_route(update: Update, context):
         context.user_data['kategori_dict'] = KATEGORI_KELUAR
         text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
     else:
-        # Jika data tidak dikenal, kirim pesan error dan akhiri
         await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
         return ConversationHandler.END
 
@@ -290,14 +277,12 @@ async def choose_route(update: Update, context):
     except Exception as e:
         logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
         
-        # Blok ini sekarang memiliki akses ke variabel 'text' dan 'chat_id'
         sent_message = await context.bot.send_message(
             chat_id,
-            text, # Variabel 'text' sudah didefinisikan
+            text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
-        # JIKA PESAN BARU DIKIRIM, KITA SIMPAN ID-NYA
         context.user_data['menu_message_id'] = sent_message.message_id
         
     return GET_NOMINAL
@@ -345,7 +330,7 @@ async def choose_category(update: Update, context):
 
     return GET_DESCRIPTION
 
-# --- FUNGSI get_nominal YANG DIREVISI ---
+# --- FUNGSI get_nominal (REVISI CLEANUP) ---
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
@@ -354,7 +339,7 @@ async def get_nominal(update: Update, context):
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
     error_message_id = context.user_data.pop('error_message_id', None) 
     
-    # 2. INISIASI TASKS UNTUK CLEANUP (Task ini akan dieksekusi sebentar lagi)
+    # 2. INISIASI TASKS UNTUK CLEANUP
     cleanup_tasks = [
         # KRITIS: Pesan User Input Nominal
         context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
@@ -433,7 +418,7 @@ async def get_nominal(update: Update, context):
     
     return PREVIEW
     
-# --- FUNGSI get_description YANG DIREVISI ---
+# --- FUNGSI get_description (REVISI CLEANUP) ---
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
@@ -588,7 +573,7 @@ async def handle_preview_actions(update: Update, context):
     except Exception:
         pass
         
-    # 2. Mencoba Menghapus Pesan Preview (secara terpisah, agar tidak menunda aksi utama)
+    # 2. Mencoba Menghapus Pesan Preview 
     chat_id = query.message.chat_id
     preview_message_id = query.message.message_id
 
@@ -746,7 +731,12 @@ def init_application():
             ],
             per_user=True,
             per_chat=True,
-            allow_reentry=True
+            allow_reentry=True,
+            # --- PENGATURAN IDLE TIMEOUT BARU ---
+            # Mengatur batas waktu idle menjadi 5 menit (300 detik)
+            # agar sesi percakapan tidak mudah berakhir.
+            idle_timeout=timedelta(seconds=300) 
+            # ------------------------------------
         )
 
         application.add_handler(conv_handler)
@@ -766,7 +756,7 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask. Menggunakan pola Loop Baru per Request."""
+    """Fungsi handler Vercel/Flask."""
     
     global application_instance
     
@@ -801,7 +791,7 @@ def flask_webhook_handler():
             application_instance._initialized = True
             logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
             
-        # 3. Jalankan pemrosesan update di loop baru (process_update sudah menangani handler)
+        # 3. Jalankan pemrosesan update di loop baru
         new_loop.run_until_complete(application_instance.process_update(update))
         
         # 4. Tutup loop setelah selesai
