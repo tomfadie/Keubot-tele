@@ -131,6 +131,18 @@ async def start(update: Update, context):
     user = update.effective_user
     logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
 
+    # --- PERBAIKAN: Hapus Pesan Fallback Lama jika ada ---
+    chat_id = update.effective_chat.id
+    fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
+    if fallback_id_to_delete:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=fallback_id_to_delete)
+            logging.info(f"Berhasil menghapus pesan fallback lama ID: {fallback_id_to_delete}")
+        except Exception:
+            logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_id_to_delete}")
+            pass
+    # ----------------------------------------------------
+
     user_data_identity = {
         'user_id': user.id,
         'first_name': user.first_name,
@@ -141,7 +153,6 @@ async def start(update: Update, context):
     context.user_data.update(user_data_identity)
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
-    chat_id = update.effective_chat.id
     
     if update.message or update.callback_query:
         try:
@@ -165,17 +176,19 @@ async def start(update: Update, context):
             # 3. KETIKA GAGAL KARENA RuntimeError (Cold Start)
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
-            # --- FALLBACK: Mengirim Pesan Sederhana ---
+            # --- FALLBACK: Mengirim Pesan Sederhana & Menyimpan ID ---
             try:
-                await context.bot.send_message(
+                fallback_message = await context.bot.send_message( # <--- Menyimpan objek pesan
                     chat_id=chat_id,
                     text="⚠️ Gagal menampilkan menu interaktif. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
+                # Menyimpan ID pesan fallback agar bisa dihapus di /start berikutnya
+                context.user_data['fallback_message_id'] = fallback_message.message_id 
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
             except Exception as fe:
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
-            # ------------------------------------------
+            # --------------------------------------------------------
 
     # 4. Hapus pesan /start user
     if update.message:
@@ -671,3 +684,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
