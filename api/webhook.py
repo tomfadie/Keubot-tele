@@ -545,23 +545,29 @@ async def handle_preview_actions(update: Update, context):
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
         text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
         
-        await context.bot.send_message(
+        sent_message = await context.bot.send_message(
              chat_id,
              text,
              reply_markup=get_menu_kembali('kembali_kategori'),
              parse_mode='Markdown'
            )
+        # --- PERBAIKAN: Menyimpan ID pesan permintaan nominal yang baru ---
+        context.user_data['nominal_request_message_id'] = sent_message.message_id 
+        # ----------------------------------------------------------------
         return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
         # ... Logic Ubah Keterangan ...
         context.user_data.pop('keterangan', None)
-        await context.bot.send_message(
+        sent_message = await context.bot.send_message(
              chat_id,
              "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
              reply_markup=get_menu_kembali('kembali_nominal'),
              parse_mode='Markdown'
            )
+        # --- PERBAIKAN: Menyimpan ID pesan permintaan keterangan yang baru ---
+        context.user_data['description_request_message_id'] = sent_message.message_id 
+        # ------------------------------------------------------------------
         return PREVIEW
 
     return PREVIEW
@@ -691,6 +697,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
