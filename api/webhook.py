@@ -143,20 +143,31 @@ async def start(update: Update, context):
     
     chat_id = update.effective_chat.id
     
-    # --- PERBAIKAN: Hapus pesan fallback error lama ---
+    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
+    # 1. Pesan Nominal Request
+    nominal_request_id = context.user_data.pop('nominal_request_message_id', None)
+    # 2. Pesan Description Request
+    description_request_id = context.user_data.pop('description_request_message_id', None)
+    # 3. Pesan Error Fallback lama
     fallback_message_id = context.user_data.pop('fallback_message_id', None)
-    if fallback_message_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=fallback_message_id)
-            logging.info(f"Berhasil menghapus pesan fallback lama ID: {fallback_message_id}")
-        except Exception:
-            logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_message_id}")
-            pass
-    # ----------------------------------------------------
+    # 4. Pesan Error Nominal (jika ada)
+    error_message_id = context.user_data.pop('error_message_id', None)
+
+    ids_to_delete = [nominal_request_id, description_request_id, fallback_message_id, error_message_id]
+
+    for msg_id in ids_to_delete:
+        if msg_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                logging.info(f"Berhasil menghapus pesan bot/error lama ID: {msg_id}")
+            except Exception:
+                pass
+    # --------------------------------------------------------------------
     
     user = update.effective_user 
     logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
 
+    # Membersihkan semua data transaksi lama
     user_data_identity = {
         'user_id': user.id,
         'first_name': user.first_name,
@@ -168,6 +179,7 @@ async def start(update: Update, context):
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
+    # Cek apakah update berasal dari pesan atau callback query
     if update.message or update.callback_query:
         try:
             # 1. Coba Kirim Menu Utama
@@ -178,32 +190,31 @@ async def start(update: Update, context):
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # 2. Penanganan Query Lama
+            # 2. Penanganan Query Lama (Jika /start dipicu dari tombol)
             if update.callback_query:
                  try:
                      await update.callback_query.answer() 
-                     await update.callback_query.message.delete()
+                     # Hapus pesan menu/preview tempat tombol ditekan
+                     await update.callback_query.message.delete() 
                  except Exception:
                      pass
 
         except Exception as e:
-            # 3. KETIKA GAGAL (Gagal mengirim menu utama)
+            # 3. KETIKA GAGAL (Gagal mengirim menu utama) - Fallback
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
-            # --- FALLBACK: Mengirim Pesan Sederhana ---
             try:
                 sent_fallback = await context.bot.send_message(
                     chat_id=chat_id, 
                     text="⚠️ Gagal menampilkan menu. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
-                # SIMPAN ID PESAN FALLBACK BARU UNTUK DIHAPUS SAAT START BERIKUTNYA
+                # Simpan ID pesan fallback baru
                 context.user_data['fallback_message_id'] = sent_fallback.message_id
                 
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
             except Exception as fe:
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
-            # ------------------------------------------
 
     # 4. Hapus pesan /start user
     if update.message:
@@ -693,4 +704,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
