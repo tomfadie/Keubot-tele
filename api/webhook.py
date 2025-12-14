@@ -4,7 +4,7 @@ import os
 import re
 import json
 import asyncio
-import nest_asyncio  # TIDAK ADA U+00A0
+import nest_asyncio
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,25 +19,19 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-# Mengambil Token dari Environment Variable Vercel
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-# URL Webhook Make Anda (Pastikan ini benar)
-MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydfygwjgq0nsvcwhot96"
+MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96"
 
-# Konfigurasi logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Definisi States
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
-# Definisi Menu Kategori
-# BARIS DIPERBAIKI (Spasi di akhir dictionary key/value telah dihapus)
 KATEGORI_MASUK = {
     'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah',
     'Lainnya': 'masuk_lainnya'
@@ -104,7 +98,6 @@ def get_menu_kategori(kategori_dict, route_name):
     return InlineKeyboardMarkup(keyboard)
 
 def get_menu_preview():
-    # BARIS DIPERBAIKI (Menghapus U+00A0 di antara tombol)
     keyboard = [
         [InlineKeyboardButton("✅ Kirim", callback_data='aksi_kirim')],
         [InlineKeyboardButton("Ubah Transaksi", callback_data='ubah_transaksi'),
@@ -304,7 +297,7 @@ async def get_nominal(update: Update, context):
             pass
             
     try:
-        # Hapus semua karakter non-digit (termasuk U+00A0 jika ada di input user)
+        # Hapus semua karakter non-digit
         nominal_str = re.sub(r'\D', '', update.message.text) 
         nominal = int(nominal_str)
         if nominal <= 0:
