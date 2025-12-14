@@ -141,6 +141,19 @@ async def handle_unmatched_text(update: Update, context):
 
 async def start(update: Update, context):
     
+    chat_id = update.effective_chat.id
+    
+    # --- PERBAIKAN: Hapus pesan fallback error lama ---
+    fallback_message_id = context.user_data.pop('fallback_message_id', None)
+    if fallback_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=fallback_message_id)
+            logging.info(f"Berhasil menghapus pesan fallback lama ID: {fallback_message_id}")
+        except Exception:
+            logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_message_id}")
+            pass
+    # ----------------------------------------------------
+    
     user = update.effective_user 
     logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
 
@@ -154,7 +167,6 @@ async def start(update: Update, context):
     context.user_data.update(user_data_identity)
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
-    chat_id = update.effective_chat.id
     
     if update.message or update.callback_query:
         try:
@@ -175,17 +187,19 @@ async def start(update: Update, context):
                      pass
 
         except Exception as e:
-            # 3. KETIKA GAGAL KARENA RuntimeError (Cold Start)
+            # 3. KETIKA GAGAL (Gagal mengirim menu utama)
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
             # --- FALLBACK: Mengirim Pesan Sederhana ---
             try:
-                # Perbaikan Fallback Text Bug
-                await context.bot.send_message(
+                sent_fallback = await context.bot.send_message(
                     chat_id=chat_id, 
                     text="⚠️ Gagal menampilkan menu. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
+                # SIMPAN ID PESAN FALLBACK BARU UNTUK DIHAPUS SAAT START BERIKUTNYA
+                context.user_data['fallback_message_id'] = sent_fallback.message_id
+                
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
             except Exception as fe:
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
@@ -679,3 +693,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
