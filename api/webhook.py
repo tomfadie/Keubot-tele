@@ -361,8 +361,8 @@ async def get_nominal(update: Update, context):
     # ------------------------------------------------------------
     
     context.user_data['nominal'] = nominal
-    
-    text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{context.user_data['kategori_nama']}*.\n\n"
+    context.user_data['kategori_nama'] = kategori nama
+    text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{kategori_nama}*.\n\n"
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
     
     sent_message = await update.message.reply_text(
@@ -689,6 +689,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
