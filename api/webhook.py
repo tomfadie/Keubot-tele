@@ -4,7 +4,7 @@ import os
 import re
 import json
 import asyncio
-import nest_asyncio 
+import nest_asyncio
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,11 +19,11 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-TOKEN = os.getenv("BOT_TOKEN") 
+TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
 
-MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96" 
+MAKE_WEBHOOK_URL = "https://hook.eu2.make.com/b80ogwk3q1wuydgfgwjgq0nsvcwhot96"
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,15 +33,15 @@ logging.basicConfig(
 START_ROUTE, CHOOSE_CATEGORY, GET_NOMINAL, GET_DESCRIPTION, PREVIEW = range(5)
 
 KATEGORI_MASUK = {
-    'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah', 
+    'Gaji': 'masuk_gaji', 'Bonus': 'masuk_bonus', 'Hadiah': 'masuk_hadiah',
     'Lainnya': 'masuk_lainnya'
 }
 KATEGORI_KELUAR = {
-    'Angsuran': 'keluar_angsuran', 'Asuransi': 'keluar_asuransi', 'Belanja': 'keluar_belanja', 
-    'Hewan': 'keluar_hewan', 'Hiburan': 'keluar_hiburan', 'Investasi': 'keluar_investasi', 
-    'Kendaraan': 'keluar_kendaraan', 'Kesehatan': 'keluar_kesehatan', 'Langganan': 'keluar_langganan', 
-    'Makan': 'keluar_makan', 'Pajak': 'keluar_pajak', 'Pakaian': 'keluar_pakaian', 
-    'Pendidikan': 'keluar_pendidikan', 'Perawatan': 'keluar_perawatan', 
+    'Angsuran': 'keluar_angsuran', 'Asuransi': 'keluar_asuransi', 'Belanja': 'keluar_belanja',
+    'Hewan': 'keluar_hewan', 'Hiburan': 'keluar_hiburan', 'Investasi': 'keluar_investasi',
+    'Kendaraan': 'keluar_kendaraan', 'Kesehatan': 'keluar_kesehatan', 'Langganan': 'keluar_langganan',
+    'Makan': 'keluar_makan', 'Pajak': 'keluar_pajak', 'Pakaian': 'keluar_pakaian',
+    'Pendidikan': 'keluar_pendidikan', 'Perawatan': 'keluar_perawatan',
     'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
@@ -50,8 +50,8 @@ KATEGORI_KELUAR = {
 def send_to_make(data):
     """Mengirim payload data ke webhook Make."""
     try:
-        response = requests.post(MAKE_WEBHOOK_URL, json=data) 
-        response.raise_for_status() 
+        response = requests.post(MAKE_WEBHOOK_URL, json=data)
+        response.raise_for_status()
         logging.info(f"Data terkirim ke Make. Status: {response.status_code}")
         return True
     except requests.exceptions.RequestException as e:
@@ -65,7 +65,7 @@ def generate_preview(user_data):
     transaksi = user_data.get('transaksi', 'N/A')
     kategori_nama = user_data.get('kategori_nama', 'N/A')
     nominal = user_data.get('nominal', 0)
-    keterangan = user_data.get('keterangan', 'N/A') # <--- Pastikan baris ini ada dan benar
+    keterangan = user_data.get('keterangan', 'N/A')
     nominal_formatted = format_nominal(nominal)
     
     preview_text = f"*Inputan Anda:*\n\n"
@@ -78,7 +78,7 @@ def generate_preview(user_data):
 
 def debug_check_ids(context):
     """Mencetak ID pesan yang seharusnya dihapus untuk debugging."""
-    chat_id = context._chat_id 
+    chat_id = context._chat_id
     nominal_id = context.user_data.get('nominal_request_message_id')
     
     if nominal_id:
@@ -112,9 +112,9 @@ def get_menu_kategori(kategori_dict, route_name):
 def get_menu_preview():
     keyboard = [
         [InlineKeyboardButton("✅ Kirim", callback_data='aksi_kirim')],
-        [InlineKeyboardButton("Ubah Transaksi", callback_data='ubah_transaksi'), 
+        [InlineKeyboardButton("Ubah Transaksi", callback_data='ubah_transaksi'),
          InlineKeyboardButton("Ubah Kategori", callback_data='ubah_kategori')],
-        [InlineKeyboardButton("Ubah Nominal", callback_data='ubah_nominal'), 
+        [InlineKeyboardButton("Ubah Nominal", callback_data='ubah_nominal'),
          InlineKeyboardButton("Ubah Keterangan", callback_data='ubah_keterangan')]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -129,7 +129,7 @@ def get_menu_kembali(callback_data):
 
 async def handle_unmatched_text(update: Update, context):
     """
-    Handler untuk teks yang tidak cocok. Dipicu ketika ConversationHandler 
+    Handler untuk teks yang tidak cocok. Dipicu ketika ConversationHandler
     berada di END (misalnya, setelah idle terlalu lama).
     """
     await update.message.reply_text(
@@ -146,9 +146,9 @@ async def start(update: Update, context):
     # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
     ids_to_delete_keys = [
         'menu_message_id', # <--- BARU: ID Menu Utama
-        'nominal_request_message_id', 
-        'description_request_message_id', 
-        'fallback_message_id', 
+        'nominal_request_message_id',
+        'description_request_message_id',
+        'fallback_message_id',
         'error_message_id'
     ]
     
@@ -168,34 +168,34 @@ async def start(update: Update, context):
     # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
     if update.callback_query:
         try:
-            await update.callback_query.message.delete() 
+            await update.callback_query.message.delete()
             logging.info(f"Berhasil menghapus pesan Callback Query yang memicu /start.")
         except Exception:
             pass
     # --------------------------------------------------------------------
     
-    user = update.effective_user 
+    user = update.effective_user
     logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
-  
+    
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
     if update.message or update.callback_query:
         try:
             # 1. Coba Kirim Menu Utama
             menu_message = await context.bot.send_message(
-                chat_id=chat_id, 
-                text=text, 
+                chat_id=chat_id,
+                text=text,
                 reply_markup=get_menu_transaksi()
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
             # SIMPAN ID PESAN MENU UTAMA YANG BARU
-            context.user_data['menu_message_id'] = menu_message.message_id 
+            context.user_data['menu_message_id'] = menu_message.message_id
             
             # 2. Penanganan Query Lama
             if update.callback_query:
                  try:
-                     await update.callback_query.answer() 
+                     await update.callback_query.answer()
                  except Exception:
                      pass
 
@@ -205,7 +205,7 @@ async def start(update: Update, context):
             
             try:
                 sent_fallback = await context.bot.send_message(
-                    chat_id=chat_id, 
+                    chat_id=chat_id,
                     text="⚠️ Gagal menampilkan menu. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
@@ -217,25 +217,25 @@ async def start(update: Update, context):
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
 
     # 4. Hapus pesan /start user
-    if update.message:
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
-            
+    if update.message:
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+            
     # --- BLOK DIPINDAHKAN DIMULAI DI SINI ---
-    # Membersihkan semua data transaksi lama
-    user_data_identity = {
-        'user_id': user.id,
-        'first_name': user.first_name,
-        'username': user.username if user.username else 'NoUsername'
-    }
+    # Membersihkan semua data transaksi lama
+    user_data_identity = {
+        'user_id': user.id,
+        'first_name': user.first_name,
+        'username': user.username if user.username else 'NoUsername'
+    }
 
-    context.user_data.clear()
-    context.user_data.update(user_data_identity)
+    context.user_data.clear()
+    context.user_data.update(user_data_identity)
     # --- BLOK DIPINDAHKAN BERAKHIR DI SINI ---
     
-    return CHOOSE_CATEGORY 
+    return CHOOSE_CATEGORY
 
 async def cancel(update: Update, context):
     if update.message:
@@ -245,9 +245,9 @@ async def cancel(update: Update, context):
             await update.callback_query.answer()
             await update.callback_query.edit_message_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
         except Exception:
-             await context.bot.send_message(
-                 chat_id=update.effective_chat.id, 
-                 text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
                )
     
     context.user_data.clear()
@@ -269,7 +269,7 @@ async def choose_route(update: Update, context):
     # ---------------------------------------
     
     if data == 'transaksi_masuk':
-        context.user_data['transaksi'] = 'Masuk' 
+        context.user_data['transaksi'] = 'Masuk'
         context.user_data['kategori_dict'] = KATEGORI_MASUK
         text = "Silahkan Pilih Kategori dari Pemasukan"
     elif data == 'transaksi_keluar':
@@ -278,7 +278,7 @@ async def choose_route(update: Update, context):
         text = "Silahkan Pilih Kategori dari Pengeluaran"
     elif data == 'transaksi_tabungan':
         context.user_data['transaksi'] = 'Tabungan'
-        context.user_data['kategori_dict'] = KATEGORI_KELUAR 
+        context.user_data['kategori_dict'] = KATEGORI_KELUAR
         text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
     else:
         # Jika data tidak dikenal, kirim pesan error dan akhiri
@@ -288,7 +288,7 @@ async def choose_route(update: Update, context):
     try:
         # Edit Message Text akan mempertahankan ID pesan lama (menu_message_id)
         await query.edit_message_text(
-            text, 
+            text,
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
@@ -296,7 +296,7 @@ async def choose_route(update: Update, context):
         logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
         
         # Blok ini sekarang memiliki akses ke variabel 'text' dan 'chat_id'
-        sent_message = await context.bot.send_message( 
+        sent_message = await context.bot.send_message(
             chat_id,
             text, # Variabel 'text' sudah didefinisikan
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
@@ -305,12 +305,12 @@ async def choose_route(update: Update, context):
         # JIKA PESAN BARU DIKIRIM, KITA SIMPAN ID-NYA
         context.user_data['menu_message_id'] = sent_message.message_id
         
-    return GET_NOMINAL 
+    return GET_NOMINAL
 
 async def choose_category(update: Update, context):
     query = update.callback_query
     try:
-        await query.answer() 
+        await query.answer()
     except Exception:
         pass
         
@@ -318,7 +318,7 @@ async def choose_category(update: Update, context):
     chat_id = query.message.chat_id
     
     if data == 'kembali_transaksi':
-        return await start(update, context) 
+        return await start(update, context)
     
     kategori_dict = context.user_data.get('kategori_dict', {})
     kategori_nama = next((nama for nama, data_cb in kategori_dict.items() if data_cb == data), 'N/A')
@@ -330,8 +330,8 @@ async def choose_category(update: Update, context):
     
     try:
         sent_message = await update.callback_query.message.reply_text(
-            text, 
-            reply_markup=get_menu_kembali('kembali_kategori'), 
+            text,
+            reply_markup=get_menu_kembali('kembali_kategori'),
             parse_mode='Markdown'
         )
         await update.callback_query.message.delete()
@@ -341,13 +341,13 @@ async def choose_category(update: Update, context):
         # Jika gagal, pastikan tetap mencatat state baru (fallback)
         context.user_data['nominal_request_message_id'] = None
 
-    return GET_DESCRIPTION 
+    return GET_DESCRIPTION
 
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
-    debug_check_ids(context) 
+    debug_check_ids(context)
 
     # 1. Hapus Pesan Error LAMA (Jika ada dari percobaan sebelumnya yang gagal)
     error_message_id = context.user_data.pop('error_message_id', None)
@@ -368,7 +368,7 @@ async def get_nominal(update: Update, context):
     except (ValueError, TypeError):
         # Input Gagal: Kirim Pesan Error Baru
         try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)  
+            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         except Exception:
             pass
             
@@ -379,13 +379,13 @@ async def get_nominal(update: Update, context):
         # Simpan ID pesan error BARU
         context.user_data['error_message_id'] = error_msg.message_id
         
-        return GET_DESCRIPTION  
+        return GET_DESCRIPTION
 
     # --- Blok Nominal Valid ---
 
     # 1. Hapus pesan User (Input Nominal yang Valid)
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)  
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
@@ -408,11 +408,11 @@ async def get_nominal(update: Update, context):
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
     
     sent_message = await update.message.reply_text(
-        text,  
-        reply_markup=get_menu_kembali('kembali_nominal'),  
+        text,
+        reply_markup=get_menu_kembali('kembali_nominal'),
         parse_mode='Markdown'
     )
-    context.user_data['description_request_message_id'] = sent_message.message_id  
+    context.user_data['description_request_message_id'] = sent_message.message_id
     
     return PREVIEW
 
@@ -461,9 +461,9 @@ async def get_description(update: Update, context):
         parse_mode='Markdown'
     )
     # SIMPAN ID PESAN PREVIEW SEBAGAI menu_message_id
-    context.user_data['menu_message_id'] = sent_message.message_id 
+    context.user_data['menu_message_id'] = sent_message.message_id
     
-    return PREVIEW 
+    return PREVIEW
 
 async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
@@ -512,7 +512,7 @@ async def handle_kembali_actions(update: Update, context):
         # Hapus Nominal, Kategori Nama, dan Keterangan agar proses bersih
         context.user_data.pop('nominal', None)
         context.user_data.pop('keterangan', None)
-        context.user_data.pop('kategori_nama', None) 
+        context.user_data.pop('kategori_nama', None)
 
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
@@ -520,13 +520,13 @@ async def handle_kembali_actions(update: Update, context):
         sent_message = await context.bot.send_message(
             chat_id=chat_id,
             text=f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
-            reply_markup=get_menu_kategori(kategori_dict, transaksi), 
+            reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
         context.user_data['menu_message_id'] = sent_message.message_id
         
         # Kembalikan ke state yang menunggu pemilihan kategori
-        return GET_NOMINAL 
+        return GET_NOMINAL
 
     elif action == 'kembali_nominal':
         # Kembali dari Keterangan (PREVIEW) ke Nominal (GET_DESCRIPTION)
@@ -552,7 +552,7 @@ async def handle_kembali_actions(update: Update, context):
         context.user_data['nominal_request_message_id'] = sent_message.message_id
         
         # 5. Kembali ke state di mana bot menunggu input Nominal
-        return GET_DESCRIPTION # Kembali ke State yang menunggu input teks (Nominal) 
+        return GET_DESCRIPTION # Kembali ke State yang menunggu input teks (Nominal)
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -563,7 +563,7 @@ async def handle_preview_actions(update: Update, context):
     except Exception:
         pass
         
-    # 2. Mencoba Menghapus Pesan Preview 
+    # 2. Mencoba Menghapus Pesan Preview
     chat_id = query.message.chat_id
     
     try:
@@ -571,7 +571,7 @@ async def handle_preview_actions(update: Update, context):
         logging.info("Berhasil menghapus pesan Preview sebelum mengirim konfirmasi.")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan Preview ID:{query.message.message_id}. Error: {e}")
-        pass 
+        pass
         
     action = query.data
     
@@ -591,7 +591,7 @@ async def handle_preview_actions(update: Update, context):
         if not current_username or current_username.lower() == 'nousername':
             payload['username'] = 'NoUsernameSet'
         
-        success = send_to_make(payload) 
+        success = send_to_make(payload)
         
         transaksi_type = payload.get('transaksi', 'N/A')
         nominal_formatted = format_nominal(payload.get('nominal', 0))
@@ -610,9 +610,9 @@ async def handle_preview_actions(update: Update, context):
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
         await context.bot.send_message(
-            chat_id, 
-            response_text, 
-            parse_mode='Markdown', 
+            chat_id,
+            response_text,
+            parse_mode='Markdown',
             disable_web_page_preview=True
         )
         
@@ -636,7 +636,7 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        context.user_data.pop('nominal', None) 
+        context.user_data.pop('nominal', None)
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
         text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
@@ -644,20 +644,20 @@ async def handle_preview_actions(update: Update, context):
         await context.bot.send_message(
              chat_id,
              text,
-             reply_markup=get_menu_kembali('kembali_kategori'), 
+             reply_markup=get_menu_kembali('kembali_kategori'),
              parse_mode='Markdown'
            )
-        return GET_DESCRIPTION 
+        return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
              "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
-             reply_markup=get_menu_kembali('kembali_nominal'), 
+             reply_markup=get_menu_kembali('kembali_nominal'),
              parse_mode='Markdown'
            )
-        return PREVIEW 
+        return PREVIEW
 
     return PREVIEW
 
@@ -668,13 +668,13 @@ async def handle_preview_actions(update: Update, context):
 try:
     nest_asyncio.apply()
 except RuntimeError:
-    pass 
+    pass
 
 # Inisialisasi Flask App (Vercel akan mencari instance 'app')
 app = Flask(__name__)
 
 # Deklarasi global untuk Application instance
-application_instance = None 
+application_instance = None
 
 def init_application():
     """Menginisialisasi Application dan Conversation Handler."""
@@ -705,12 +705,12 @@ def init_application():
                 
                 GET_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'), 
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
                 ],
                 
                 PREVIEW: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'), 
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'),
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                 ]
             },
@@ -771,24 +771,22 @@ def flask_webhook_handler():
             
             new_loop.run_until_complete(application_instance.initialize())
             
-            application_instance._initialized = True  
+            application_instance._initialized = True
             logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
             
         # 3. Jalankan pemrosesan update di loop baru (process_update sudah menangani handler)
-        new_loop.run_until_complete(application_instance.process_update(update))  
+        new_loop.run_until_complete(application_instance.process_update(update))
         
         # 4. Tutup loop setelah selesai
         new_loop.close()
         # ------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
-        return 'OK', 200  
+        return 'OK', 200
         
     except Exception as e:
         # Set loop kembali ke None saat error untuk menghindari konflik pada request berikutnya
-        asyncio.set_event_loop(None)  
+        asyncio.set_event_loop(None)
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-
-
