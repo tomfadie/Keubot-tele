@@ -432,25 +432,47 @@ async def get_description(update: Update, context):
 
 async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
+    
+    # 1. Menjawab Query dan Mendapatkan Chat ID
     try:
         await query.answer()
-        await query.message.delete()
     except Exception:
         pass
         
     action = query.data
     chat_id = query.message.chat_id
     
+    # --- PEMBERSIHAN PESAN PERMINTAAN LAMA (TERMASUK PERMINTAAN NOMINAL) ---
+    # Jika aksi adalah 'kembali_kategori', kita perlu menghapus pesan permintaan nominal
+    if action == 'kembali_kategori':
+        nominal_req_id = context.user_data.pop('nominal_request_message_id', None)
+        if nominal_req_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=nominal_req_id)
+                logging.info(f"Berhasil menghapus pesan permintaan nominal ID: {nominal_req_id}")
+            except Exception:
+                pass
+    
+    # Menghapus pesan tombol kembali yang baru saja ditekan
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    # ----------------------------------------------------------------------
+        
     if action == 'kembali_kategori':
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
-        await context.bot.send_message(
+        sent_message = await context.bot.send_message(
             chat_id=chat_id,
             text=f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
             reply_markup=get_menu_kategori(kategori_dict, transaksi), 
             parse_mode='Markdown'
         )
+        # Perlu menyimpan ID pesan kategori baru (jika gagal edit) untuk dihapus oleh /start
+        context.user_data['menu_message_id'] = sent_message.message_id
+        
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
@@ -702,6 +724,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
