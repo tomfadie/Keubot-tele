@@ -330,24 +330,24 @@ async def choose_category(update: Update, context):
 
     return GET_DESCRIPTION
 
+# --- REVISI async def get_nominal ---
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
-    # Ambil ID pesan bot permintaan nominal lama
-    bot_message_to_delete_id = context.user_data.get('nominal_request_message_id')
+    # 1. Ambil semua ID pesan bot permintaan nominal yang mungkin
+    bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
     
-    # Hapus pesan User sekarang, sebelum validasi, untuk menjaga kebersihan.
-    # Namun, kita simpan ID-nya untuk penanganan error.
+    # 2. Hapus pesan User sekarang, sebelum validasi, untuk menjaga kebersihan.
     try:
-        await update.message.delete()
+        # COBA HAPUS PESAN USER DI SINI
+        await update.message.delete() 
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} sebelum validasi.")
     except Exception as e:
-        # Jika gagal dihapus (misal: pesan sudah terlalu tua), kita hanya log, bukan membatalkan transaksi.
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
         pass
-    
-    # 1. Hapus Pesan Error LAMA (Jika ada dari percobaan sebelumnya yang gagal)
+        
+    # 3. Hapus Pesan Error LAMA (Jika ada dari percobaan sebelumnya yang gagal)
     error_message_id = context.user_data.pop('error_message_id', None)
     if error_message_id:
         try:
@@ -358,46 +358,39 @@ async def get_nominal(update: Update, context):
             
     # --- Validasi Input Nominal ---
     try:
-        # Menghilangkan semua karakter non-digit
         nominal_str = re.sub(r'\D', '', update.message.text)
-        
-        # Penanganan kasus jika string kosong setelah di-sub
         if not nominal_str:
-             raise ValueError("Input kosong atau hanya simbol.")
-             
+            raise ValueError("Input kosong atau hanya simbol.")
         nominal = int(nominal_str)
         if nominal <= 0:
             raise ValueError("Nominal harus lebih besar dari nol.")
             
     except (ValueError, TypeError, Exception) as e:
-        # Input Gagal: Kirim Pesan Error Baru
         logging.error(f"Gagal memvalidasi nominal: {e}")
         
-        error_msg = await context.bot.send_message( # Menggunakan context.bot.send_message karena update.message sudah dihapus
+        error_msg = await context.bot.send_message(
             chat_id,
             "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
             parse_mode='Markdown'
         )
-        # Simpan ID pesan error BARU
         context.user_data['error_message_id'] = error_msg.message_id
-        
         return GET_DESCRIPTION # Tetap di state yang sama
 
     # --- Blok Nominal Valid (Lanjutan) ---
-
-    # 2. Hapus pesan Bot Lama (Permintaan Nominal)
+    
+    # 4. Hapus pesan Bot Lama (Permintaan Nominal)
     if bot_message_to_delete_id:
         try:
+            # Hapus pesan Bot yang meminta nominal
             await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            context.user_data.pop('nominal_request_message_id', None)
             logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
         except Exception as e:
             logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
-            context.user_data.pop('nominal_request_message_id', None)
             pass
-    
+            
     context.user_data['nominal'] = nominal
     
+    # 5. Kirim prompt Keterangan dan simpan ID
     text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat.\n\n"
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
     
@@ -411,27 +404,30 @@ async def get_nominal(update: Update, context):
     
     return PREVIEW
 
+# --- REVISI async def get_description ---
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
-    
-    # Ambil teks keterangan dari pesan pengguna
     keterangan = update.message.text.strip()
     
-    # Hapus pesan permintaan Keterangan lama dari Bot (yang berisi tombol kembali)
+    # 1. Hapus pesan permintaan Keterangan lama dari Bot
     description_request_id = context.user_data.pop('description_request_message_id', None)
     if description_request_id:
         try:
+            # COBA HAPUS PESAN BOT PERMINTAAN KETERANGAN DI SINI
             await context.bot.delete_message(chat_id=chat_id, message_id=description_request_id)
             logging.info(f"Berhasil menghapus pesan permintaan keterangan lama ID: {description_request_id}")
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan permintaan keterangan lama ID: {description_request_id}. Error: {e}")
             pass
             
-    # Hapus pesan Input Keterangan dari User
+    # 2. Hapus pesan Input Keterangan dari User
     try:
+        # COBA HAPUS PESAN USER INPUT KETERANGAN DI SINI
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
         pass
         
     # --- Blok Penyimpanan Data ---
@@ -445,6 +441,7 @@ async def get_description(update: Update, context):
     if menu_message_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=menu_message_id)
+            logging.info(f"Berhasil menghapus pesan PREVIEW lama ID: {menu_message_id}")
         except Exception:
             pass
 
@@ -785,3 +782,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
