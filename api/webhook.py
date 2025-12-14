@@ -302,7 +302,7 @@ async def get_nominal(update: Update, context):
     user_message_id = update.message.message_id
     
     # --- PANGGILAN FUNGSI DEBUG UNTUK VERIFIKASI ID ---
-    debug_check_ids(context)
+    debug_check_ids(context) 
     # --------------------------------------------------
 
     error_message_id = context.user_data.pop('error_message_id', None)
@@ -322,7 +322,7 @@ async def get_nominal(update: Update, context):
     except (ValueError, TypeError):
         # Hapus pesan user yang salah
         try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
         except Exception:
             pass
             
@@ -334,17 +334,9 @@ async def get_nominal(update: Update, context):
         
         return GET_DESCRIPTION
 
-    # --- PERBAIKAN: Pisahkan blok penghapusan untuk keandalan ---
+    # --- PERBAIKAN KRITIS: Pisahkan & Balik Urutan Penghapusan ---
 
-    # 1. Hapus pesan User (Input Nominal yang Valid)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
-        pass
-        
-    # 2. Hapus pesan Bot Lama (Permintaan Nominal)
+    # 1. Hapus pesan Bot Lama (Permintaan Nominal) - Prioritas 1
     if bot_message_to_delete_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
@@ -354,7 +346,16 @@ async def get_nominal(update: Update, context):
             logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
             context.user_data.pop('nominal_request_message_id', None)
             pass
-    
+            
+    # 2. Hapus pesan User (Input Nominal yang Valid) - Prioritas 2
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+    except Exception as e:
+        # Menangani kegagalan (termasuk "Event loop is closed") dengan log warning.
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
+        pass
+        
     # ------------------------------------------------------------
     
     context.user_data['nominal'] = nominal
@@ -363,11 +364,11 @@ async def get_nominal(update: Update, context):
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
     
     sent_message = await update.message.reply_text(
-        text,
-        reply_markup=get_menu_kembali('kembali_nominal'),
+        text, 
+        reply_markup=get_menu_kembali('kembali_nominal'), 
         parse_mode='Markdown'
     )
-    context.user_data['description_request_message_id'] = sent_message.message_id
+    context.user_data['description_request_message_id'] = sent_message.message_id 
     
     return PREVIEW
 
@@ -684,4 +685,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
