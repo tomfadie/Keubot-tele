@@ -342,12 +342,13 @@ async def get_nominal(update: Update, context):
     # ID ini harus dihapus baik di skenario sukses maupun gagal (error).
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None) 
     
-    # 2. Hapus pesan User (Input Nominal) secepatnya
+    # 2. Hapus pesan User (Input Nominal) secepatnya (Mengatasi Bug 1 & 2)
     try:
-        await update.message.delete()
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} sebelum validasi.")
+        await update.message.delete() 
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Input Nominal).")
     except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
+        # Jika gagal dihapus (kemungkinan besar masalah timing Vercel/Flask), log saja.
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Nominal). Error: {e}")
         pass
         
     # 3. Hapus Pesan Error LAMA (Jika ada dari percobaan sebelumnya yang gagal)
@@ -372,7 +373,7 @@ async def get_nominal(update: Update, context):
             raise ValueError("Nominal harus lebih besar dari nol.")
             
     except (ValueError, TypeError, Exception) as e:
-        # --- BLOK ERROR VALIDASI (KASUS GAGAL) ---
+        # --- BLOK ERROR VALIDASI ---
         logging.error(f"Gagal memvalidasi nominal: {e}")
         
         # SOLUSI BUG: Hapus pesan Bot Permintaan Nominal LAMA
@@ -392,13 +393,11 @@ async def get_nominal(update: Update, context):
         )
         context.user_data['error_message_id'] = error_msg.message_id
         
-        # Kembali ke state yang sama agar pengguna dapat mencoba lagi
-        return GET_DESCRIPTION 
+        return GET_DESCRIPTION # Tetap di state yang sama
 
     # --- Blok Nominal Valid (Lanjutan) ---
     
-    # 4. Hapus pesan Bot Lama (Permintaan Nominal)
-    # Ini menangani kasus sukses, dan diperlukan jika ID belum dihapus di blok error
+    # 4. Hapus pesan Bot Lama (Permintaan Nominal, pada skenario Sukses)
     if bot_message_to_delete_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
@@ -421,33 +420,31 @@ async def get_nominal(update: Update, context):
     )
     context.user_data['description_request_message_id'] = sent_message.message_id
     
-    # Lanjut ke state PREVIEW (Menunggu input teks Keterangan)
     return PREVIEW
-
-# --- REVISI async def get_description ---
+    
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
+    
+    # Ambil teks keterangan dari pesan pengguna
     keterangan = update.message.text.strip()
     
-    # 1. Hapus pesan permintaan Keterangan lama dari Bot
+    # 1. Hapus pesan permintaan Keterangan lama dari Bot (Mengatasi Bug 3)
     description_request_id = context.user_data.pop('description_request_message_id', None)
     if description_request_id:
         try:
-            # COBA HAPUS PESAN BOT PERMINTAAN KETERANGAN DI SINI
             await context.bot.delete_message(chat_id=chat_id, message_id=description_request_id)
             logging.info(f"Berhasil menghapus pesan permintaan keterangan lama ID: {description_request_id}")
         except Exception as e:
             logging.warning(f"Gagal menghapus pesan permintaan keterangan lama ID: {description_request_id}. Error: {e}")
             pass
             
-    # 2. Hapus pesan Input Keterangan dari User
+    # 2. Hapus pesan Input Keterangan dari User (Mengatasi bug serupa di sini)
     try:
-        # COBA HAPUS PESAN USER INPUT KETERANGAN DI SINI
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
     except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Input Keterangan). Error: {e}")
         pass
         
     # --- Blok Penyimpanan Data ---
@@ -456,7 +453,7 @@ async def get_description(update: Update, context):
         
     preview_text = generate_preview(context.user_data)
     
-    # Hapus pesan PREVIEW lama (jika ada, misalnya dari opsi 'Ubah Keterangan')
+    # 3. Hapus pesan PREVIEW lama (jika ada, misalnya dari opsi 'Ubah Keterangan')
     menu_message_id = context.user_data.pop('menu_message_id', None)
     if menu_message_id:
         try:
@@ -465,18 +462,17 @@ async def get_description(update: Update, context):
         except Exception:
             pass
 
-    # Kirim pesan preview baru
+    # 4. Kirim pesan preview baru
     sent_message = await context.bot.send_message(
         chat_id,
         preview_text,
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
-    # SIMPAN ID PESAN PREVIEW SEBAGAI menu_message_id
     context.user_data['menu_message_id'] = sent_message.message_id
     
     return PREVIEW
-
+    
 async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
     
@@ -802,5 +798,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
