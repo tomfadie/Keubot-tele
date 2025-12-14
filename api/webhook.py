@@ -176,17 +176,7 @@ async def start(update: Update, context):
     
     user = update.effective_user 
     logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
-
-    # Membersihkan semua data transaksi lama
-    user_data_identity = {
-        'user_id': user.id,
-        'first_name': user.first_name,
-        'username': user.username if user.username else 'NoUsername'
-    }
-
-    context.user_data.clear() 
-    context.user_data.update(user_data_identity)
-    
+  
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
     if update.message or update.callback_query:
@@ -227,13 +217,25 @@ async def start(update: Update, context):
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
 
     # 4. Hapus pesan /start user
-    if update.message:
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
-            
-    return CHOOSE_CATEGORY 
+    if update.message:
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+            
+    # --- BLOK DIPINDAHKAN DIMULAI DI SINI ---
+    # Membersihkan semua data transaksi lama
+    user_data_identity = {
+        'user_id': user.id,
+        'first_name': user.first_name,
+        'username': user.username if user.username else 'NoUsername'
+    }
+
+    context.user_data.clear()
+    context.user_data.update(user_data_identity)
+    # --- BLOK DIPINDAHKAN BERAKHIR DI SINI ---
+    
+    return CHOOSE_CATEGORY 
 
 async def cancel(update: Update, context):
     if update.message:
@@ -788,4 +790,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
