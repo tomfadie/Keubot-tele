@@ -76,10 +76,8 @@ def generate_preview(user_data):
     preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
     return preview_text
 
-# FUNGSI DEBUGGING BARU
 def debug_check_ids(context):
     """Mencetak ID pesan yang seharusnya dihapus untuk debugging."""
-    # ... (fungsi ini tetap sama seperti sebelumnya) ...
     chat_id = context._chat_id 
     nominal_id = context.user_data.get('nominal_request_message_id')
     
@@ -129,6 +127,18 @@ def get_menu_kembali(callback_data):
 
 # --- HANDLERS UTAMA (Semua fungsi async) ---
 
+async def handle_unmatched_text(update: Update, context):
+    """
+    Handler untuk teks yang tidak cocok. Dipicu ketika ConversationHandler 
+    berada di END (misalnya, setelah idle terlalu lama).
+    """
+    await update.message.reply_text(
+        "Maaf, sesi pencatatan Anda telah berakhir (mungkin karena idle terlalu lama). "
+        "Silakan mulai ulang dengan perintah /start."
+    )
+    return ConversationHandler.END
+
+
 async def start(update: Update, context):
     
     user = update.effective_user 
@@ -148,7 +158,7 @@ async def start(update: Update, context):
     
     if update.message or update.callback_query:
         try:
-            # 1. Coba Kirim Menu Utama (Paling Rentan)
+            # 1. Coba Kirim Menu Utama
             menu_message = await context.bot.send_message(
                 chat_id=chat_id, 
                 text=text, 
@@ -169,10 +179,11 @@ async def start(update: Update, context):
             logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
             
             # --- FALLBACK: Mengirim Pesan Sederhana ---
-            # Ini mungkin berhasil karena operasi ini jauh lebih sederhana
             try:
+                # Perbaikan Fallback Text Bug
                 await context.bot.send_message(
                     chat_id=chat_id, 
+                    text="⚠️ Gagal menampilkan menu. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
@@ -200,7 +211,7 @@ async def cancel(update: Update, context):
              await context.bot.send_message(
                  chat_id=update.effective_chat.id, 
                  text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
-             )
+               )
     
     context.user_data.clear()
     return ConversationHandler.END
@@ -210,7 +221,7 @@ async def choose_route(update: Update, context):
     
     # --- Defensive Coding: Menjawab Query ---
     try:
-        await query.answer() # <--- GAGAL DI SINI
+        await query.answer()
     except Exception as e:
         logging.warning(f"Gagal menjawab query di choose_route: {e}")
     # ---------------------------------------
@@ -441,22 +452,19 @@ async def handle_preview_actions(update: Update, context):
     except Exception:
         pass
         
-    # 2. Mencoba Menghapus Pesan Preview (Block yang rentan terhadap 'Event loop is closed')
-    # Kita pisahkan agar kegagalan ini tidak menghentikan pengiriman payload (aksi_kirim)
+    # 2. Mencoba Menghapus Pesan Preview 
     chat_id = query.message.chat_id
     
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
         logging.info("Berhasil menghapus pesan Preview sebelum mengirim konfirmasi.")
     except Exception as e:
-        # Ini akan menangkap RuntimeError jika loop sudah ditutup
         logging.warning(f"Gagal menghapus pesan Preview ID:{query.message.message_id}. Error: {e}")
-        pass # Lanjutkan proses pengiriman data meskipun penghapusan pesan gagal
+        pass 
         
     action = query.data
     
     if action == 'aksi_kirim':
-        # ... (sisa kode send_to_make dan response tetap sama) ...
         
         payload = {
             'user_id': context.user_data.get('user_id'),
@@ -491,11 +499,11 @@ async def handle_preview_actions(update: Update, context):
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
         await context.bot.send_message(
-    chat_id, 
-    response_text, 
-    parse_mode='Markdown', 
-    disable_web_page_preview=True
-)
+            chat_id, 
+            response_text, 
+            parse_mode='Markdown', 
+            disable_web_page_preview=True
+        )
         
         context.user_data.clear()
         
@@ -505,7 +513,6 @@ async def handle_preview_actions(update: Update, context):
         return await start(update, context)
         
     elif action == 'ubah_kategori':
-        # ... (sisa kode ubah kategori) ...
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -518,7 +525,6 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        # ... (sisa kode ubah nominal) ...
         context.user_data.pop('nominal', None) 
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
@@ -533,7 +539,6 @@ async def handle_preview_actions(update: Update, context):
         return GET_DESCRIPTION 
 
     elif action == 'ubah_keterangan':
-        # ... (sisa kode ubah keterangan) ...
         context.user_data.pop('keterangan', None)
         await context.bot.send_message(
              chat_id,
@@ -561,14 +566,17 @@ app = Flask(__name__)
 application_instance = None 
 
 def init_application():
-    """Menginisialisasi Application dan Conversation Handler tanpa memanggil initialize()."""
+    """Menginisialisasi Application dan Conversation Handler."""
     global application_instance
     
     if not TOKEN:
         return None
 
     try:
-        # Application.builder() harus dipanggil sebelum loop dibuat/diset.
+        # PENTING: Set Event Loop Policy di sini untuk mengatasi Event loop is closed
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+        logging.info("Asyncio Default Event Loop Policy berhasil diset.")
+
         application = Application.builder().token(TOKEN).build()
         
         conv_handler = ConversationHandler(
@@ -604,6 +612,12 @@ def init_application():
         )
 
         application.add_handler(conv_handler)
+        
+        # Penambahan Handler Global untuk mengatasi State Hilang/Idle Timeout
+        application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unmatched_text)
+        )
+        
         logging.info("Aplikasi Telegram berhasil diinisialisasi.")
         return application
     
@@ -614,7 +628,7 @@ def init_application():
 
 @app.route('/webhook', methods=['POST'])
 def flask_webhook_handler():
-    """Fungsi handler Vercel/Flask. Pola Loop Baru per Request + Policy."""
+    """Fungsi handler Vercel/Flask. Menggunakan pola Loop Baru per Request."""
     
     global application_instance
     
@@ -637,48 +651,31 @@ def flask_webhook_handler():
         
         # --- PERBAIKAN KRITIS UNTUK FINAL EVENT LOOP ---
         
-        # 1. Tentukan Event Loop Policy (Penting untuk thread-safety di serverless)
-        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-        
-        # 2. Buat loop baru
+        # 1. Buat loop baru
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        # 3. Inisialisasi Kondisional (Mengatasi "Application was not initialized")
+        # 2. Inisialisasi Kondisional (Hanya jika belum pernah diinisialisasi)
         if not hasattr(application_instance, '_initialized') or not application_instance._initialized:
             
-            # Panggil initialize di loop baru pada request pertama
             new_loop.run_until_complete(application_instance.initialize())
             
-            # Set flag agar tidak dipanggil lagi
-            application_instance._initialized = True 
+            application_instance._initialized = True  
             logging.info("Application instance berhasil diinisialisasi (Initialization Complete).")
             
-        # 4. Jalankan pemrosesan update di loop baru
-        new_loop.run_until_complete(application_instance.process_update(update)) 
+        # 3. Jalankan pemrosesan update di loop baru (process_update sudah menangani handler)
+        new_loop.run_until_complete(application_instance.process_update(update))  
         
-        # 5. Tutup loop setelah selesai
+        # 4. Tutup loop setelah selesai
         new_loop.close()
         # ------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
-        return 'OK', 200 
+        return 'OK', 200  
         
     except Exception as e:
         # Set loop kembali ke None saat error untuk menghindari konflik pada request berikutnya
-        asyncio.set_event_loop(None) 
+        asyncio.set_event_loop(None)  
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-
-
-
-
-
-
-
-
-
-
-
-
