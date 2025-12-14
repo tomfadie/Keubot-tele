@@ -424,15 +424,19 @@ async def get_nominal(update: Update, context):
     
     # Lanjut ke state PREVIEW (State yang menunggu input teks Keterangan)
     return PREVIEW
+    
+async def get_description(update: Update, context):
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
-    # 1. Ambil semua ID pesan bot permintaan keterangan yang mungkin
-    # ID dari alur awal:
+    # 1. Ambil semua ID pesan bot permintaan keterangan yang mungkin (Initial & Edit)
     bot_prompt_id_initial = context.user_data.pop('description_request_message_id', None)
-    # ID dari alur edit (jika pengguna memilih 'Ubah Keterangan'):
     bot_prompt_id_edit = context.user_data.pop('description_edit_prompt_id', None)
+    
+    # Ambil ID pesan Preview yang harus di-update (jika ada, dari alur 'Ubah Keterangan')
+    # Kita asumsikan ID pesan Preview disimpan di 'preview_message_id'
+    preview_message_id = context.user_data.get('preview_message_id', None)
     
     ids_to_delete = []
     if bot_prompt_id_initial:
@@ -440,7 +444,7 @@ async def get_description(update: Update, context):
     if bot_prompt_id_edit:
         ids_to_delete.append(bot_prompt_id_edit)
 
-    # Hapus pesan User (Input Keterangan)
+    # 2. Hapus pesan User (Input Keterangan) secepatnya
     try:
         await update.message.delete()
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
@@ -448,7 +452,7 @@ async def get_description(update: Update, context):
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
         pass
         
-    # 2. Hapus Pesan Error LAMA (Jika ada)
+    # 3. Hapus Pesan Error LAMA (Jika ada)
     error_message_id = context.user_data.pop('error_message_id', None)
     if error_message_id:
         try:
@@ -459,18 +463,19 @@ async def get_description(update: Update, context):
     # --- Validasi Input Keterangan ---
     description = update.message.text.strip()
     if not description:
-        # Kirim error dan kembali ke state
+        # Kirim error dan kembali ke state (PREVIEW) untuk menunggu input lagi
         error_msg = await context.bot.send_message(
             chat_id,
             "⚠️ Keterangan tidak boleh kosong. Silakan masukkan deskripsi transaksi.",
             parse_mode='Markdown'
         )
         context.user_data['error_message_id'] = error_msg.message_id
-        return PREVIEW # Atau state yang sesuai
+        # State tetap PREVIEW karena ia adalah state yang menunggu input Keterangan
+        return PREVIEW 
 
-    # Blok Keterangan Valid (Lanjutan)
+    # --- Blok Keterangan Valid (Lanjutan) ---
     
-    # 3. Hapus Pesan Bot Permintaan Keterangan LAMA (Initial ATAU Edit)
+    # 4. Hapus Pesan Bot Permintaan Keterangan LAMA (Prompt yang baru saja dijawab)
     for msg_id in ids_to_delete:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
@@ -479,11 +484,49 @@ async def get_description(update: Update, context):
             logging.warning(f"Gagal menghapus pesan bot lama ID: {msg_id}. Error: {e}")
             pass
 
-    context.user_data['description'] = description
+    context.user_data['keterangan'] = description
     
-    # Setelah berhasil, edit pesan PREVIEW untuk menampilkan keterangan baru
-    # ... (Logika update pesan PREVIEW Anda) ...
+    # 5. GENERATE DAN UPDATE/KIRIM PESAN PREVIEW
+    
+    # Gunakan fungsi utilitas Anda untuk membuat teks preview
+    preview_text = generate_preview(context.user_data) 
+    
+    if preview_message_id:
+        # Opsi A: Edit pesan preview yang sudah ada (Alur 'Ubah Keterangan')
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=preview_message_id,
+                text=preview_text,
+                reply_markup=get_menu_preview(),
+                parse_mode='Markdown'
+            )
+            logging.info(f"Berhasil mengedit pesan preview ID: {preview_message_id}")
+            
+        except Exception as e:
+            # Jika edit gagal (misal: pesan terlalu lama/sudah dihapus), kirim yang baru
+            logging.error(f"Gagal mengedit pesan preview ID: {preview_message_id}. Mengirim pesan baru. Error: {e}")
+            # Reset ID dan kirim baru
+            context.user_data.pop('preview_message_id', None)
+            sent_message = await context.bot.send_message(
+                chat_id=chat_id,
+                text=preview_text,
+                reply_markup=get_menu_preview(),
+                parse_mode='Markdown'
+            )
+            context.user_data['preview_message_id'] = sent_message.message_id
+            
+    else:
+        # Opsi B: Kirim pesan preview baru (Alur inisial)
+        sent_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=preview_text,
+            reply_markup=get_menu_preview(),
+            parse_mode='Markdown'
+        )
+        context.user_data['preview_message_id'] = sent_message.message_id
 
+    # Tetap di state PREVIEW untuk menangani CallbackQuery dari tombol preview actions
     return PREVIEW
 
 async def handle_kembali_actions(update: Update, context):
@@ -821,6 +864,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
