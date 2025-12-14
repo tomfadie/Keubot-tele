@@ -380,15 +380,9 @@ async def get_description(update: Update, context):
     keterangan = update.message.text
     context.user_data['keterangan'] = keterangan
     
-    # --- Perbaikan Keandalan Penghapusan (User Input) ---
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Deskripsi)")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Deskripsi). Error: {e}")
-        pass
+    # --- PERBAIKAN: Membalik Urutan Penghapusan ---
 
-    # --- Perbaikan Keandalan Penghapusan (Bot Request) ---
+    # 1. Hapus pesan Bot Request Lama (Prioritas 1: Terbukti lebih andal)
     if bot_message_to_delete_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
@@ -396,6 +390,14 @@ async def get_description(update: Update, context):
         except Exception as e:
             logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request). Error: {e}")
             pass
+
+    # 2. Hapus pesan User Input (Prioritas 2: Rentan terhadap 'Event loop is closed')
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Deskripsi)")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Deskripsi). Error: {e}")
+        pass
     
     # ----------------------------------------------------
             
@@ -407,7 +409,7 @@ async def get_description(update: Update, context):
         parse_mode='Markdown'
     )
     return PREVIEW
-
+    
 async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
     try:
@@ -685,5 +687,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
