@@ -323,7 +323,7 @@ async def get_nominal(update: Update, context):
     
     # 2. Hapus pesan User Input (Prioritas 1)
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
@@ -664,3 +664,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
