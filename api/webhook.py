@@ -340,24 +340,23 @@ async def get_nominal(update: Update, context):
 
     # --- PERBAIKAN KRITIS: Pisahkan & Balik Urutan Penghapusan ---
 
-    # 1. Hapus pesan Bot Lama (Permintaan Nominal)
-    if bot_message_to_delete_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
-            # Tidak perlu pop lagi karena sudah di pop di awal fungsi
-        except Exception as e:
-            # Mencatat kegagalan spesifik seperti Event loop is closed
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
-            pass # PENTING: Lanjut ke penghapusan berikutnya meskipun gagal
-
-    # 2. Hapus pesan User (Input Nominal yang Valid)
+    # 1. Hapus pesan User (Input Nominal yang Valid)
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
         logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
     except Exception as e:
         logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
         pass
+
+    # 2. Hapus pesan Bot Lama (Permintaan Nominal)
+    bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None) # Gunakan pop di sini
+    if bot_message_to_delete_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
+            pass
         
     # ------------------------------------------------------------
     
@@ -678,8 +677,6 @@ def flask_webhook_handler():
         # 4. Jalankan pemrosesan update di loop baru
         new_loop.run_until_complete(application_instance.process_update(update))
         
-        # 5. Tutup loop setelah selesai
-        new_loop.close()
         # ------------------------------------------------------
 
         logging.info("Update Telegram berhasil diproses oleh Application (Async complete).")
@@ -691,6 +688,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
