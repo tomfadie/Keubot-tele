@@ -442,7 +442,7 @@ async def handle_kembali_actions(update: Update, context):
     action = query.data
     chat_id = query.message.chat_id
     
-    # --- PEMBERSIHAN PESAN PERMINTAAN LAMA (TERMASUK PERMINTAAN NOMINAL) ---
+    # --- PEMBERSIHAN PESAN PERMINTAAN LAMA ---
     # Jika aksi adalah 'kembali_kategori', kita perlu menghapus pesan permintaan nominal
     if action == 'kembali_kategori':
         nominal_req_id = context.user_data.pop('nominal_request_message_id', None)
@@ -461,6 +461,7 @@ async def handle_kembali_actions(update: Update, context):
     # ----------------------------------------------------------------------
         
     if action == 'kembali_kategori':
+        # Kembali dari Nominal ke Kategori
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
         
@@ -476,17 +477,33 @@ async def handle_kembali_actions(update: Update, context):
         return GET_NOMINAL 
 
     elif action == 'kembali_nominal':
-        text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
-        text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
+        # Kembali dari Keterangan (PREVIEW) ke Nominal (GET_DESCRIPTION)
         
+        # 1. Hapus Nominal dan Keterangan Lama
+        context.user_data.pop('nominal', None)
+        context.user_data.pop('keterangan', None)
+        
+        # Hapus ID pesan permintaan deskripsi lama
+        context.user_data.pop('description_request_message_id', None) 
+        
+        # 2. Siapkan pesan permintaan Nominal
+        kategori_nama = context.user_data.get('kategori_nama', 'N/A')
+        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {kategori_nama}*.\n\n"
+        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
+        
+        # 3. Kirim pesan baru (dengan tombol kembali ke Kategori)
         sent_message = await context.bot.send_message(
             chat_id=chat_id,
             text=text,
-            reply_markup=get_menu_kembali('kembali_nominal'),
+            reply_markup=get_menu_kembali('kembali_kategori'), # Tombol kembali sekarang mengarah ke Kategori
             parse_mode='Markdown'
         )
-        context.user_data['description_request_message_id'] = sent_message.message_id
-        return PREVIEW 
+        
+        # 4. Simpan ID pesan nominal baru
+        context.user_data['nominal_request_message_id'] = sent_message.message_id
+        
+        # 5. Kembali ke state di mana bot menunggu input Nominal
+        return GET_DESCRIPTION # <--- PERBAIKAN KRITIS: Kembali ke state input nominal 
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -724,6 +741,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
