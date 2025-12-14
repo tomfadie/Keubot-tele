@@ -5,7 +5,7 @@ import re
 import json
 import asyncio
 import nest_asyncio
-from datetime import timedelta # <--- TAMBAHAN KRITIS UNTUK IDLE TIMEOUT
+# from datetime import timedelta <--- DIHAPUS UNTUK KOMPATIBILITAS
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,7 +20,6 @@ from telegram.ext import (
 
 # --- KONFIGURASI DAN STATES ---
 
-# Pastikan Anda telah mengatur BOT_TOKEN di environment variable (misalnya di Vercel)
 TOKEN = os.getenv("BOT_TOKEN") 
 if not TOKEN:
     logging.error("BOT_TOKEN Environment Variable tidak ditemukan. Aplikasi tidak akan berfungsi.")
@@ -671,8 +670,6 @@ async def handle_preview_actions(update: Update, context):
            )
         return PREVIEW
 
-    return PREVIEW
-
 
 # --- FUNGSI ENTRY POINT UTAMA UNTUK SERVERLESS (KRITIS) ---
 
@@ -732,10 +729,9 @@ def init_application():
             per_user=True,
             per_chat=True,
             allow_reentry=True,
-            # --- PENGATURAN IDLE TIMEOUT BARU ---
+            # --- PENGATURAN TIMEOUT LAMA (PTB < 20) ---
             # Mengatur batas waktu idle menjadi 5 menit (300 detik)
-            # agar sesi percakapan tidak mudah berakhir.
-            idle_timeout=timedelta(seconds=300) 
+            timeout=300 
             # ------------------------------------
         )
 
