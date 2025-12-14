@@ -142,99 +142,86 @@ async def handle_unmatched_text(update: Update, context):
 async def start(update: Update, context):
     
     chat_id = update.effective_chat.id
+    user = update.effective_user
+
+    # Hapus data transaksi lama
+    user_data_identity = {
+        'user_id': user.id,
+        'first_name': user.first_name,
+        'username': user.username if user.username else 'NoUsername'
+    }
+    context.user_data.clear()
+    context.user_data.update(user_data_identity)
     
-    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
+    # --- 1. PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
+    # Logika penghapusan pesan lama dipindahkan ke awal untuk membersihkan UI
     ids_to_delete_keys = [
-        'menu_message_id', # <--- BARU: ID Menu Utama
+        'menu_message_id',
         'nominal_request_message_id',
         'description_request_message_id',
         'fallback_message_id',
         'error_message_id'
     ]
     
-    ids_to_delete = []
-    for key in ids_to_delete_keys:
-        msg_id = context.user_data.pop(key, None)
-        if msg_id:
-            ids_to_delete.append(msg_id)
-
-    for msg_id in ids_to_delete:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            logging.info(f"Berhasil menghapus pesan bot/error lama ID: {msg_id}")
-        except Exception:
-            pass
-            
     # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
     if update.callback_query:
         try:
             await update.callback_query.message.delete()
-            logging.info(f"Berhasil menghapus pesan Callback Query yang memicu /start.")
         except Exception:
             pass
-    # --------------------------------------------------------------------
-    
-    user = update.effective_user
-    logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
-    
-    text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
-    
-    if update.message or update.callback_query:
         try:
-            # 1. Coba Kirim Menu Utama
-            menu_message = await context.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=get_menu_transaksi()
-            )
-            logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
+            await update.callback_query.answer() # Pastikan query dijawab
+        except Exception:
+            pass
             
-            # SIMPAN ID PESAN MENU UTAMA YANG BARU
-            context.user_data['menu_message_id'] = menu_message.message_id
-            
-            # 2. Penanganan Query Lama
-            if update.callback_query:
-                 try:
-                     await update.callback_query.answer()
-                 except Exception:
-                     pass
-
-        except Exception as e:
-            # 3. KETIKA GAGAL (Gagal mengirim menu utama) - Fallback
-            logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
-            
-            try:
-                sent_fallback = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="⚠️ Gagal menampilkan menu. Silakan coba /start lagi.",
-                    parse_mode='Markdown'
-                )
-                # Simpan ID pesan fallback baru
-                context.user_data['fallback_message_id'] = sent_fallback.message_id
-                
-                logging.warning("Pesan fallback instruksi start berhasil dikirim.")
-            except Exception as fe:
-                logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
-
-    # 4. Hapus pesan /start user
+    # Hapus pesan /start user
     if update.message:
         try:
             await update.message.delete()
         except Exception:
             pass
             
-    # --- BLOK DIPINDAHKAN DIMULAI DI SINI ---
-    # Membersihkan semua data transaksi lama
-    user_data_identity = {
-        'user_id': user.id,
-        'first_name': user.first_name,
-        'username': user.username if user.username else 'NoUsername'
-    }
-
-    context.user_data.clear()
-    context.user_data.update(user_data_identity)
-    # --- BLOK DIPINDAHKAN BERAKHIR DI SINI ---
+    # Hapus pesan BOT lama
+    for key in ids_to_delete_keys:
+        msg_id = context.user_data.pop(key, None)
+        if msg_id:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            except Exception:
+                pass
+    # ----------------------------------------------------
     
+    text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
+    
+    menu_sent = False
+    
+    # --- 2. KIRIM MENU UTAMA ---
+    try:
+        # Coba Kirim Menu Utama
+        menu_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_menu_transaksi()
+        )
+        context.user_data['menu_message_id'] = menu_message.message_id
+        logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
+        menu_sent = True
+
+    except Exception as e:
+        # KETIKA GAGAL: Langsung kirim pesan Fallback dan JANGAN ulangi pengiriman menu
+        logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
+        
+        try:
+            sent_fallback = await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Gagal menampilkan menu interaktif. Silakan coba /start lagi.",
+                parse_mode='Markdown'
+            )
+            context.user_data['fallback_message_id'] = sent_fallback.message_id
+            logging.warning("Pesan fallback instruksi start berhasil dikirim.")
+        except Exception as fe:
+            logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
+
     return CHOOSE_CATEGORY
 
 async def cancel(update: Update, context):
@@ -790,3 +777,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
