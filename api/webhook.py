@@ -254,9 +254,35 @@ async def cancel(update: Update, context):
 async def choose_route(update: Update, context):
     query = update.callback_query
     
-    # ... (kode menjawab query dan penentuan data/teks) ...
+    # PINDAHKAN DEFINISI VARIABEL KE AWAL FUNGSI
+    data = query.data
+    chat_id = query.message.chat_id
+    text = "" # Inisialisasi variabel text
     
-    # KODE INI BERJALAN JIKA PILIHAN MASUK/KELUAR/TABUNGAN VALID
+    # --- Defensive Coding: Menjawab Query ---
+    try:
+        await query.answer()
+    except Exception as e:
+        logging.warning(f"Gagal menjawab query di choose_route: {e}")
+    # ---------------------------------------
+    
+    if data == 'transaksi_masuk':
+        context.user_data['transaksi'] = 'Masuk' 
+        context.user_data['kategori_dict'] = KATEGORI_MASUK
+        text = "Silahkan Pilih Kategori dari Pemasukan"
+    elif data == 'transaksi_keluar':
+        context.user_data['transaksi'] = 'Keluar'
+        context.user_data['kategori_dict'] = KATEGORI_KELUAR
+        text = "Silahkan Pilih Kategori dari Pengeluaran"
+    elif data == 'transaksi_tabungan':
+        context.user_data['transaksi'] = 'Tabungan'
+        context.user_data['kategori_dict'] = KATEGORI_KELUAR 
+        text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
+    else:
+        # Jika data tidak dikenal, kirim pesan error dan akhiri
+        await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
+        return ConversationHandler.END
+
     try:
         # Edit Message Text akan mempertahankan ID pesan lama (menu_message_id)
         await query.edit_message_text(
@@ -264,12 +290,13 @@ async def choose_route(update: Update, context):
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
-        # Tidak perlu update 'menu_message_id' karena ID-nya tetap sama (efek edit)
     except Exception as e:
         logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
-        sent_message = await context.bot.send_message( # <--- KARENA GAGAL EDIT, KITA KIRIM PESAN BARU
+        
+        # Blok ini sekarang memiliki akses ke variabel 'text' dan 'chat_id'
+        sent_message = await context.bot.send_message( 
             chat_id,
-            text, 
+            text, # Variabel 'text' sudah didefinisikan
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
@@ -675,6 +702,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
