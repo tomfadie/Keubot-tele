@@ -143,25 +143,28 @@ async def start(update: Update, context):
     
     chat_id = update.effective_chat.id
     
-    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
-    # 1. Pesan Nominal Request
-    nominal_request_id = context.user_data.pop('nominal_request_message_id', None)
-    # 2. Pesan Description Request
-    description_request_id = context.user_data.pop('description_request_message_id', None)
-    # 3. Pesan Error Fallback lama
-    fallback_message_id = context.user_data.pop('fallback_message_id', None)
-    # 4. Pesan Error Nominal (jika ada)
-    error_message_id = context.user_data.pop('error_message_id', None)
-
-    ids_to_delete = [nominal_request_id, description_request_id, fallback_message_id, error_message_id]
+    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA (1/2) ---
+    # Hapus semua ID pesan yang tersimpan di context.user_data
+    
+    ids_to_delete_keys = [
+        'nominal_request_message_id', 
+        'description_request_message_id', 
+        'fallback_message_id', 
+        'error_message_id'
+    ]
+    
+    ids_to_delete = []
+    for key in ids_to_delete_keys:
+        msg_id = context.user_data.pop(key, None)
+        if msg_id:
+            ids_to_delete.append(msg_id)
 
     for msg_id in ids_to_delete:
-        if msg_id:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                logging.info(f"Berhasil menghapus pesan bot/error lama ID: {msg_id}")
-            except Exception:
-                pass
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            logging.info(f"Berhasil menghapus pesan bot/error lama (ID tersimpan) ID: {msg_id}")
+        except Exception:
+            pass
     # --------------------------------------------------------------------
     
     user = update.effective_user 
@@ -181,6 +184,17 @@ async def start(update: Update, context):
     
     # Cek apakah update berasal dari pesan atau callback query
     if update.message or update.callback_query:
+        
+        # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA (2/2) ---
+        # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
+        if update.callback_query:
+            try:
+                # Ini menghapus menu/preview tempat tombol 'start' ditekan (misal tombol Ubah Transaksi)
+                await update.callback_query.message.delete() 
+            except Exception as e:
+                logging.warning(f"Gagal menghapus pesan Callback Query yang memicu /start: {e}")
+        # --------------------------------------------------------
+
         try:
             # 1. Coba Kirim Menu Utama
             menu_message = await context.bot.send_message(
@@ -190,12 +204,10 @@ async def start(update: Update, context):
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # 2. Penanganan Query Lama (Jika /start dipicu dari tombol)
+            # 2. Penanganan Query Lama
             if update.callback_query:
                  try:
                      await update.callback_query.answer() 
-                     # Hapus pesan menu/preview tempat tombol ditekan
-                     await update.callback_query.message.delete() 
                  except Exception:
                      pass
 
@@ -704,5 +716,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
