@@ -545,7 +545,7 @@ async def handle_kembali_actions(update: Update, context):
         # 5. Kembali ke state di mana bot menunggu input Nominal
         return GET_DESCRIPTION # Kembali ke State yang menunggu input teks (Nominal)
 
-aasync def handle_preview_actions(update: Update, context):
+async def handle_preview_actions(update: Update, context):
     query = update.callback_query
     
     # 1. Menjawab Query
@@ -791,6 +791,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
