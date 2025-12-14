@@ -333,66 +333,40 @@ async def choose_category(update: Update, context):
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
+    # ... (Logika pengambilan ID lama dan penghapusan pesan user/error) ...
     
-    # 1. Ambil semua ID pesan bot permintaan nominal yang mungkin
-    # ID dari alur awal:
-    bot_prompt_id_initial = context.user_data.pop('nominal_request_message_id', None)
-    # ID dari alur edit (jika pengguna memilih 'Ubah Nominal'):
-    bot_prompt_id_edit = context.user_data.pop('nominal_edit_prompt_id', None)
-    
-    # --- Tambahkan ID pesan yang perlu dihapus ke dalam list ---
-    ids_to_delete = []
-    if bot_prompt_id_initial:
-        ids_to_delete.append(bot_prompt_id_initial)
-    if bot_prompt_id_edit:
-        ids_to_delete.append(bot_prompt_id_edit)
-
-    # Hapus pesan User (sudah dilakukan sebelumnya, tetapi memastikan)
+    # --- Validasi Nominal ---
     try:
-        await update.message.delete()
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
-        pass
-        
-    # 2. Hapus Pesan Error LAMA (Jika ada)
-    error_message_id = context.user_data.pop('error_message_id', None)
-    if error_message_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=error_message_id)
-            logging.info(f"Berhasil menghapus pesan ERROR ID: {error_message_id}")
-        except Exception:
-            pass
-            
-    # --- Validasi Nominal dan Lanjutan Logika ---
-    # ... (Logika validasi nominal Anda di sini) ...
-    try:
-        nominal_str = re.sub(r'\D', '', update.message.text)
-        if not nominal_str:
-             raise ValueError("Input kosong atau hanya simbol.")
+        # ... (Logika Validasi yang sudah benar) ...
         nominal = int(nominal_str)
         if nominal <= 0:
             raise ValueError("Nominal harus lebih besar dari nol.")
             
     except (ValueError, TypeError, Exception) as e:
-        # Input Gagal: Kirim Pesan Error Baru
-        # ... (Logika Error Anda di sini) ...
-        return GET_DESCRIPTION # Atau state yang sesuai
+        # ... (Logika Error: return GET_DESCRIPTION) ...
+        return GET_DESCRIPTION
 
-    # Blok Nominal Valid (Lanjutan)
+    # --- Blok Nominal Valid (Lanjutan) ---
     
-    # 3. Hapus Pesan Bot Permintaan Nominal LAMA (Initial ATAU Edit)
-    for msg_id in ids_to_delete:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {msg_id}")
-        except Exception as e:
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {msg_id}. Error: {e}")
-            pass
+    # 3. Hapus Pesan Bot Permintaan Nominal LAMA
+    # ... (Logika penghapusan pesan bot) ...
 
     context.user_data['nominal'] = nominal
-    # ... (Logika Lanjutan untuk meminta Keterangan atau kembali ke PREVIEW) ...
-    return PREVIEW # Atau state yang sesuai
+    
+    # >>> START: TAMBAHAN KRITIS (Solusi I)
+    text_prompt = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat.\n\n"
+    text_prompt += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
+    
+    sent_message = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text_prompt,
+        reply_markup=get_menu_kembali('kembali_nominal'),
+        parse_mode='Markdown'
+    )
+    context.user_data['description_request_message_id'] = sent_message.message_id
+    # <<< END: TAMBAHAN KRITIS
+    
+    return PREVIEW
 
 async def get_description(update: Update, context):
     chat_id = update.message.chat_id
@@ -791,6 +765,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
