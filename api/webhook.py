@@ -65,15 +65,15 @@ def generate_preview(user_data):
     transaksi = user_data.get('transaksi', 'N/A')
     kategori_nama = user_data.get('kategori_nama', 'N/A')
     nominal = user_data.get('nominal', 0)
-    keterangan = user_data.get('keterangan', 'N/A')
+    keterangan = user_data.get('keterangan', 'N/A') # <--- Pastikan baris ini ada dan benar
     nominal_formatted = format_nominal(nominal)
     
     preview_text = f"*Inputan Anda:*\n\n"
     preview_text += f"*Transaksi:* {transaksi}\n"
     preview_text += f"*Kategori:* {kategori_nama}\n"
-    preview_text += f"*Nominal:* Rp {nominal_formatted}\n"
+    preview_text += f"*Nominal:* Rp{nominal_formatted}\n"
     preview_text += f"*Keterangan:* {keterangan}\n\n"
-    preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
+    preview_text += f"`{transaksi} Rp{nominal_formatted} {kategori_nama} {keterangan}`"
     return preview_text
 
 def debug_check_ids(context):
@@ -415,18 +415,51 @@ async def get_nominal(update: Update, context):
     return PREVIEW
 
 async def get_description(update: Update, context):
-    # ... (kode penanganan deskripsi dan penghapusan) ...
+    chat_id = update.message.chat_id
+    user_message_id = update.message.message_id
+    
+    # Ambil teks keterangan dari pesan pengguna
+    keterangan = update.message.text.strip()
+    
+    # Hapus pesan permintaan Keterangan lama dari Bot (yang berisi tombol kembali)
+    description_request_id = context.user_data.pop('description_request_message_id', None)
+    if description_request_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=description_request_id)
+            logging.info(f"Berhasil menghapus pesan permintaan keterangan lama ID: {description_request_id}")
+        except Exception:
+            pass
             
+    # Hapus pesan Input Keterangan dari User
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+    except Exception:
+        pass
+        
+    # --- Blok Penyimpanan Data ---
+    context.user_data['keterangan'] = keterangan
+    # ----------------------------
+        
     preview_text = generate_preview(context.user_data)
     
-    sent_message = await update.message.reply_text(
+    # Hapus pesan PREVIEW lama (jika ada, misalnya dari opsi 'Ubah Keterangan')
+    menu_message_id = context.user_data.pop('menu_message_id', None)
+    if menu_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=menu_message_id)
+        except Exception:
+            pass
+
+    # Kirim pesan preview baru
+    sent_message = await context.bot.send_message(
+        chat_id,
         preview_text,
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
-    # --- BARU: SIMPAN ID PESAN PREVIEW SEBAGAI menu_message_id ---
+    # SIMPAN ID PESAN PREVIEW SEBAGAI menu_message_id
     context.user_data['menu_message_id'] = sent_message.message_id 
-    # -----------------------------------------------------------
     
     return PREVIEW 
 
@@ -755,3 +788,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
