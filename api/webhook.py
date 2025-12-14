@@ -143,10 +143,9 @@ async def start(update: Update, context):
     
     chat_id = update.effective_chat.id
     
-    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA (1/2) ---
-    # Hapus semua ID pesan yang tersimpan di context.user_data
-    
+    # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA ---
     ids_to_delete_keys = [
+        'menu_message_id', # <--- BARU: ID Menu Utama
         'nominal_request_message_id', 
         'description_request_message_id', 
         'fallback_message_id', 
@@ -162,7 +161,15 @@ async def start(update: Update, context):
     for msg_id in ids_to_delete:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            logging.info(f"Berhasil menghapus pesan bot/error lama (ID tersimpan) ID: {msg_id}")
+            logging.info(f"Berhasil menghapus pesan bot/error lama ID: {msg_id}")
+        except Exception:
+            pass
+            
+    # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
+    if update.callback_query:
+        try:
+            await update.callback_query.message.delete() 
+            logging.info(f"Berhasil menghapus pesan Callback Query yang memicu /start.")
         except Exception:
             pass
     # --------------------------------------------------------------------
@@ -182,19 +189,7 @@ async def start(update: Update, context):
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
-    # Cek apakah update berasal dari pesan atau callback query
     if update.message or update.callback_query:
-        
-        # --- PEMBERSIHAN PESAN LAMA DARI SESI SEBELUMNYA (2/2) ---
-        # Hapus pesan yang Memicu /start (jika update berasal dari callback/tombol)
-        if update.callback_query:
-            try:
-                # Ini menghapus menu/preview tempat tombol 'start' ditekan (misal tombol Ubah Transaksi)
-                await update.callback_query.message.delete() 
-            except Exception as e:
-                logging.warning(f"Gagal menghapus pesan Callback Query yang memicu /start: {e}")
-        # --------------------------------------------------------
-
         try:
             # 1. Coba Kirim Menu Utama
             menu_message = await context.bot.send_message(
@@ -203,6 +198,9 @@ async def start(update: Update, context):
                 reply_markup=get_menu_transaksi()
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
+            
+            # SIMPAN ID PESAN MENU UTAMA YANG BARU
+            context.user_data['menu_message_id'] = menu_message.message_id 
             
             # 2. Penanganan Query Lama
             if update.callback_query:
@@ -256,46 +254,27 @@ async def cancel(update: Update, context):
 async def choose_route(update: Update, context):
     query = update.callback_query
     
-    # --- Defensive Coding: Menjawab Query ---
-    try:
-        await query.answer()
-    except Exception as e:
-        logging.warning(f"Gagal menjawab query di choose_route: {e}")
-    # ---------------------------------------
+    # ... (kode menjawab query dan penentuan data/teks) ...
     
-    data = query.data
-    chat_id = query.message.chat_id
-    
-    if data == 'transaksi_masuk':
-        context.user_data['transaksi'] = 'Masuk' 
-        context.user_data['kategori_dict'] = KATEGORI_MASUK
-        text = "Silahkan Pilih Kategori dari Pemasukan"
-    elif data == 'transaksi_keluar':
-        context.user_data['transaksi'] = 'Keluar'
-        context.user_data['kategori_dict'] = KATEGORI_KELUAR
-        text = "Silahkan Pilih Kategori dari Pengeluaran"
-    elif data == 'transaksi_tabungan':
-        context.user_data['transaksi'] = 'Tabungan'
-        context.user_data['kategori_dict'] = KATEGORI_KELUAR 
-        text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
-    else:
-        await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
-        return ConversationHandler.END
-
+    # KODE INI BERJALAN JIKA PILIHAN MASUK/KELUAR/TABUNGAN VALID
     try:
+        # Edit Message Text akan mempertahankan ID pesan lama (menu_message_id)
         await query.edit_message_text(
             text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
+        # Tidak perlu update 'menu_message_id' karena ID-nya tetap sama (efek edit)
     except Exception as e:
         logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
-        await context.bot.send_message(
+        sent_message = await context.bot.send_message( # <--- KARENA GAGAL EDIT, KITA KIRIM PESAN BARU
             chat_id,
             text, 
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
+        # JIKA PESAN BARU DIKIRIM, KITA SIMPAN ID-NYA
+        context.user_data['menu_message_id'] = sent_message.message_id
         
     return GET_NOMINAL 
 
@@ -409,39 +388,19 @@ async def get_nominal(update: Update, context):
     return PREVIEW
 
 async def get_description(update: Update, context):
-    chat_id = update.message.chat_id
-    user_message_id = update.message.message_id
-    bot_message_to_delete_id = context.user_data.pop('description_request_message_id', None)
-    
-    keterangan = update.message.text
-    context.user_data['keterangan'] = keterangan
-    
-    # --- Perbaikan Keandalan Penghapusan (User Input) ---
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id)
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id} (Deskripsi)")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id} (Deskripsi). Error: {e}")
-        pass
-
-    # --- Perbaikan Keandalan Penghapusan (Bot Request) ---
-    if bot_message_to_delete_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request)")
-        except Exception as e:
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id} (Deskripsi Request). Error: {e}")
-            pass
-    
-    # ----------------------------------------------------
+    # ... (kode penanganan deskripsi dan penghapusan) ...
             
     preview_text = generate_preview(context.user_data)
     
-    await update.message.reply_text(
+    sent_message = await update.message.reply_text(
         preview_text,
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
+    # --- BARU: SIMPAN ID PESAN PREVIEW SEBAGAI menu_message_id ---
+    context.user_data['menu_message_id'] = sent_message.message_id 
+    # -----------------------------------------------------------
+    
     return PREVIEW 
 
 async def handle_kembali_actions(update: Update, context):
@@ -716,6 +675,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
