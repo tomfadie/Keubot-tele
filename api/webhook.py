@@ -545,14 +545,28 @@ async def handle_preview_actions(update: Update, context):
         return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
-        # ... Logic Ubah Keterangan ...
+        # 1. Hapus nilai keterangan lama
         context.user_data.pop('keterangan', None)
-        await context.bot.send_message(
+        
+        # 2. Ambil data yang akan ditampilkan
+        nominal = context.user_data.get('nominal', 0)
+        kategori_nama = context.user_data.get('kategori_nama', 'N/A')
+        
+        # 3. Bentuk pesan baru dengan informasi nominal
+        text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{kategori_nama}*.\n\n"
+        text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
+        
+        # 4. Kirim pesan dan simpan ID-nya
+        sent_message = await context.bot.send_message(
              chat_id,
-             "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
+             text,
              reply_markup=get_menu_kembali('kembali_nominal'),
              parse_mode='Markdown'
            )
+        
+        # KRITIS: Simpan ID pesan ini agar bisa dihapus oleh get_description
+        context.user_data['description_request_message_id'] = sent_message.message_id 
+        
         return PREVIEW
 
     return PREVIEW
@@ -673,4 +687,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
