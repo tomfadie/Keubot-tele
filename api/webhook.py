@@ -8,7 +8,6 @@ import nest_asyncio
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext.ext_bot import ExtBot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -844,5 +843,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
