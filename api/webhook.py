@@ -360,24 +360,20 @@ import asyncio
 
 # FUNGSI HELPER UNTUK MENGATASI RUNTIME ERROR DI VERCEL
 async def delete_message_with_workaround(context, chat_id, message_id, log_prefix):
-    """Menghapus pesan menggunakan asyncio.wrap_future untuk mengatasi RuntimeError di serverless."""
+    """Menghapus pesan menggunakan pemanggilan async standar."""
     
     if not message_id:
         return
 
     try:
-        # Dapatkan instance bot dari application
-        bot_instance = context.application.bot
-        
-        # Buat Future untuk operasi delete_message
-        future = bot_instance.delete_message(chat_id=chat_id, message_id=message_id)
-        
-        # Jalankan Future ini secara aman dalam loop yang sama (Workaround)
-        await asyncio.wrap_future(future)
-        logging.info(f"Berhasil menghapus {log_prefix} ID: {message_id} menggunakan Workaround.")
+        # Panggil bot.delete_message secara langsung dengan await
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        logging.info(f"Berhasil menghapus {log_prefix} ID: {message_id} (Simple Await).")
     except Exception as e:
+        # PENTING: Jika error yang muncul adalah 'Unknown error in HTTP implementation: RuntimeError' lagi, 
+        # itu berarti perbaikan Vercel handler belum sepenuhnya mengatasi masalah ini secara konsisten, 
+        # tetapi secara kode, ini adalah cara yang benar.
         logging.warning(f"Gagal menghapus {log_prefix} ID: {message_id}. Error: {e}")
-        # Jangan raise exception, biarkan alur berjalan
         pass
         
 
@@ -424,10 +420,10 @@ async def get_nominal(update: Update, context):
 
     # --- Penghapusan (Hanya dijalankan jika validasi sukses) ---
 
-    # 2. Hapus pesan User (Input Nominal yang Valid) menggunakan Workaround
+   # 2. Hapus pesan User (Input Nominal yang Valid)
     await delete_message_with_workaround(context, chat_id, user_message_id, "pesan user valid")
 
-    # 3. Hapus pesan Bot Lama (Permintaan Nominal) menggunakan Workaround
+    # 3. Hapus pesan Bot Lama (Permintaan Nominal)
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
     await delete_message_with_workaround(context, chat_id, bot_message_to_delete_id, "pesan bot lama")
             
@@ -847,6 +843,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
