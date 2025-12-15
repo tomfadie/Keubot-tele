@@ -213,69 +213,71 @@ async def start(update: Update, context):
 async def cancel(update: Update, context):
     chat_id = update.effective_chat.id
     
-    # --- 1. Hapus semua ID pesan interaktif yang tersimpan ---
-    
     # List semua ID yang mungkin perlu dihapus saat pembatalan
     ids_to_check = [
         'nominal_request_message_id', 
         'description_request_message_id',
-        'fallback_message_id',
+        'fallback_message_id', 
         'category_menu_id',       
         'preview_message_id',     
-        'start_menu_id'
-        # ----------------------------------------------------
+        'start_menu_id',
+        'cancel_confirmation_id' # Masih perlu dibersihkan jika ada sisa dari sesi sebelumnya
     ]
     
-    deleted_count = 0
+    # 1. Hapus semua ID pesan interaktif lama
     for key in ids_to_check:
         message_id = context.user_data.pop(key, None)
         if message_id:
             await delete_message_safe(context, chat_id, message_id, f"Pesan {key}")
-            deleted_count += 1
             
-    logging.info(f"Handler 'cancel': {deleted_count} pesan interaktif lama berhasil dihapus.")
-    
-    # --- 2. Hapus pesan User / Cancel atau Edit Pesan Callback ---
+    # --- VARIABEL SEMENTARA UNTUK MENYIMPAN ID KONFIRMASI BARU ---
+    conf_id = None 
+    # -----------------------------------------------------------
 
     if update.message:
         # Hapus pesan /cancel dari pengguna
         await delete_message_safe(context, chat_id, update.message.message_id, "Pesan user /cancel")
         
         # Kirim pesan konfirmasi
-        confirmation_message = await context.bot.send_message( # <--- Tangkap pesan yang dikirim
+        confirmation_message = await context.bot.send_message(
             chat_id=chat_id,
             text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
             parse_mode='Markdown'
         )
-        # KRITIS: Simpan ID pesan konfirmasi
-        context.user_data['cancel_confirmation_id'] = confirmation_message.message_id
+        # Ambil ID untuk disimpan secara temporer
+        conf_id = confirmation_message.message_id
         
     elif update.callback_query:
         query = update.callback_query
         try:
             await query.answer()
             
-            # Untuk pesan yang di-*edit*, kita bisa menyimpan ID pesan yang sudah ada
+            # Edit pesan tombol
             await query.edit_message_text(
                 "✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
                 parse_mode='Markdown'
             )
-            # KRITIS: Simpan ID pesan yang di-edit
-            context.user_data['cancel_confirmation_id'] = query.message.message_id
+            # Ambil ID untuk disimpan secara temporer (ID pesan yang di-edit)
+            conf_id = query.message.message_id
             
         except Exception as e:
             logging.warning(f"Gagal edit pesan saat cancel: {e}. Mengirim pesan baru.")
             
-            # Jika gagal edit, kirim pesan baru dan simpan ID-nya
+            # Jika gagal edit, kirim pesan baru
             confirmation_message = await context.bot.send_message(
                 chat_id=chat_id,
                 text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
                 parse_mode='Markdown'
             )
-            context.user_data['cancel_confirmation_id'] = confirmation_message.message_id
+            conf_id = confirmation_message.message_id
     
-    # --- 3. Bersihkan sisa user_data dan Akhiri Konversasi ---
+    # --- FIX KRITIS: BERSIHKAN DATA SESI LALU SISAKAN ID KONFIRMASI ---
     context.user_data.clear()
+    
+    # Pasang kembali ID konfirmasi yang baru saja didapat (HANYA INI YANG DISIMPAN)
+    if conf_id:
+        context.user_data['cancel_confirmation_id'] = conf_id
+        
     return ConversationHandler.END
 
 async def choose_route(update: Update, context):
@@ -758,6 +760,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
