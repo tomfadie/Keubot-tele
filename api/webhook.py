@@ -8,6 +8,7 @@ import nest_asyncio
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext.ext_bot import ExtBot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -525,27 +526,46 @@ async def go_back_to_nominal(update: Update, context):
     query = update.callback_query
     chat_id = query.message.chat_id
     message_to_delete_id = query.message.message_id # ID pesan Keterangan yang ingin dihapus
-
-    # 1. Menjawab Query dan Mencoba Hapus Pesan Bot (Pesan Keterangan)
+    
+    # 1. Menjawab Query
     try:
         await query.answer()
+    except Exception:
+        pass
         
-        # Ini adalah baris yang harus menghapus pesan Keterangan
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_to_delete_id) 
-        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {message_to_delete_id} saat 'kembali_nominal'.")
+    # 2. Hapus Pesan Bot (MENGGUNAKAN WORKAROUND THREADSAFE)
+    try:
+        # Dapatkan event loop yang sedang aktif
+        current_loop = asyncio.get_event_loop()
+        
+        # Eksekusi delete_message dalam loop secara sinkron (Workaround Vercel)
+        # Gunakan bot dari context.application (lebih aman dari context.bot)
+        # Catatan: context.bot adalah instance ExtBot
+        bot_instance = context.application.bot
+        
+        # Buat Future untuk operasi delete_message
+        future = bot_instance.delete_message(chat_id=chat_id, message_id=message_to_delete_id)
+        
+        # Jalankan Future ini secara sinkron dalam loop yang sama.
+        # Ini mengatasi masalah "bound to a different event loop"
+        await asyncio.wrap_future(future)
+        
+        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {message_to_delete_id} menggunakan Threadsafe Workaround.")
     except Exception as e:
-        # Jika gagal delete, log error tapi biarkan alur berlanjut
+        # Jika gagal delete, log error
         logging.warning(f"Gagal menghapus pesan bot keterangan saat 'kembali_nominal'. Error: {e}")
         pass
+        
+    # --- LANJUTKAN ALUR STANDAR ---
         
     # Hapus ID pesan permintaan keterangan dari user_data
     context.user_data.pop('description_request_message_id', None)
     
-    # 2. Hapus Nominal Lama yang Tersimpan (sesuai alur: kembali untuk input ulang Nominal)
+    # 3. Hapus Nominal Lama (untuk input ulang Nominal)
     context.user_data.pop('nominal', None)
     context.user_data.pop('keterangan', None)
 
-    # 3. KIRIM ULANG PESAN PERMINTAAN NOMINAL BARU
+    # 4. KIRIM ULANG PESAN PERMINTAAN NOMINAL BARU
     
     transaksi = context.user_data.get('transaksi', 'N/A')
     kategori_nama = context.user_data.get('kategori_nama', 'N/A')
@@ -560,10 +580,9 @@ async def go_back_to_nominal(update: Update, context):
         parse_mode='Markdown'
     )
     
-    # Simpan ID pesan permintaan nominal yang baru agar bisa dihapus oleh get_nominal
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
-    # 4. PINDAH STATE ke tempat input nominal
+    # 5. PINDAH STATE
     return GET_DESCRIPTION
 
 async def handle_preview_actions(update: Update, context):
@@ -825,4 +844,5 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
