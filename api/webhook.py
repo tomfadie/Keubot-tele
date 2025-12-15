@@ -142,29 +142,29 @@ def get_menu_kembali(callback_data):
 async def start(update: Update, context):
     
     user = update.effective_user
-    logging.info(f"Handler 'start' Dipanggil oleh User: {user.id}")
-
-    # --- PERBAIKAN: Hapus Pesan Fallback Lama jika ada ---
     chat_id = update.effective_chat.id
-    fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
     
+    # --- 1. HAPUS FALLBACK MESSAGE LAMA DARI SESI SEBELUMNYA ---
+    # Ini memastikan pesan "Gagal menampilkan menu interaktif..." dari sesi Cold Start yang gagal dihapus.
+    fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
     await delete_message_safe(context, chat_id, fallback_id_to_delete, "pesan fallback")
-    # ----------------------------------------------------
+    # -----------------------------------------------------------
 
+    # 2. Siapkan dan Bersihkan Data
     user_data_identity = {
         'user_id': user.id,
         'first_name': user.first_name,
         'username': user.username if user.username else 'NoUsername'
     }
 
-    context.user_data.clear()
-    context.user_data.update(user_data_identity)
+    context.user_data.clear() # Membersihkan semua data transaksi lama
+    context.user_data.update(user_data_identity) # Memasukkan kembali identitas pengguna
     
     text = "Halo! Silakan pilih transaksi yang ingin Anda catat:"
     
     if update.message or update.callback_query:
         try:
-            # 1. Coba Kirim Menu Utama
+            # 3. COBA KIRIM MENU UTAMA (SUCCESS CASE)
             menu_message = await context.bot.send_message(
                 chat_id=chat_id,
                 text=text,
@@ -172,11 +172,10 @@ async def start(update: Update, context):
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
-            # --- PERBAIKAN A: Simpan ID pesan menu transaksi yang baru ---
+            # KRITIS: Simpan ID menu awal agar bisa dihapus oleh /cancel
             context.user_data['start_menu_id'] = menu_message.message_id
-            # -----------------------------------------------------------
             
-            # 2. Penanganan Query Lama
+            # 4. Penanganan Query Lama (jika start dipanggil dari callback query)
             if update.callback_query:
                 try:
                     await update.callback_query.answer()
@@ -185,8 +184,8 @@ async def start(update: Update, context):
                     pass
 
         except Exception as e:
-            # 3. KETIKA GAGAL KARENA RuntimeError (Cold Start)
-            logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id}: {e}")
+            # 5. KETIKA GAGAL KARENA RuntimeError (COLD START ERROR CASE)
+            logging.error(f"Gagal mengirim pesan 'start' ke chat {chat_id} (Kemungkinan Cold Start): {e}")
             
             # --- FALLBACK: Mengirim Pesan Sederhana & Menyimpan ID ---
             try:
@@ -201,7 +200,7 @@ async def start(update: Update, context):
                 logging.error(f"Pesan fallback juga gagal terkirim: {fe}")
             # --------------------------------------------------------
 
-    # 4. Hapus pesan /start user
+    # 6. Hapus pesan /start user
     if update.message:
         await delete_message_safe(context, chat_id, update.message.message_id, "pesan /start user")
             
@@ -747,6 +746,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
