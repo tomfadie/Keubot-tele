@@ -442,18 +442,33 @@ async def handle_kembali_actions(update: Update, context):
     chat_id = query.message.chat_id
     
     if action == 'kembali_kategori':
-        # Hapus ID pesan nominal_request_message_id jika ada (dari proses kembali yang gagal)
+
+        # --- Perbaikan: Pastikan pesan bot terhapus dengan delete di query.message ---
+        # Pesan bot yang ditekan tombol kembalinya adalah pesan yang meminta nominal.
+        try:
+            await query.answer()
+            await query.message.delete()
+            logging.info(f"Berhasil menghapus pesan bot nominal ID: {query.message.message_id} saat 'kembali_kategori'.")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot nominal saat 'kembali_kategori'. Error: {e}")
+            pass
+
+        # Hapus ID pesan nominal_request_message_id dari user_data
         context.user_data.pop('nominal_request_message_id', None)
-        
+
         kategori_dict = context.user_data.get('kategori_dict', {})
         transaksi = context.user_data.get('transaksi', 'N/A').lower()
-        
-        await context.bot.send_message(
+
+        # Mengirim menu kategori baru (Menu Transaksi)
+        menu_message = await context.bot.send_message(
             chat_id=chat_id,
             text=f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
             reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
+        # Simpan ID pesan menu kategori baru agar bisa dihapus saat pemilihan sukses
+        context.user_data['category_request_message_id'] = menu_message.message_id
+
         return GET_NOMINAL
 
     elif action == 'kembali_nominal':
@@ -705,6 +720,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
