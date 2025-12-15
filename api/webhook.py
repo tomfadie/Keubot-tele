@@ -483,66 +483,78 @@ async def get_description(update: Update, context):
     )
     return PREVIEW
     
-async def handle_kembali_actions(update: Update, context):
+async def go_back_to_category(update: Update, context):
     query = update.callback_query
     chat_id = query.message.chat_id
     
-    # 1. Menjawab Query
     try:
         await query.answer()
-    except Exception:
-        pass
         
-    # Ambil ID pesan bot yang sedang ditekan tombolnya
-    message_to_delete_id = query.message.message_id
-    action = query.data
-    
-    # --- PENGHAPUSAN PESAN BOT SAAT INI (Pesan Permintaan Keterangan/Nominal) ---
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_to_delete_id) 
-        logging.info(f"Berhasil menghapus pesan bot ID: {message_to_delete_id} melalui delete_message eksplisit.")
+        # 1. Hapus pesan bot yang berisi perintah pengisian Nominal (Pesan yang memiliki tombol ini)
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
+        logging.info(f"Berhasil menghapus pesan bot nominal ID: {query.message.message_id} saat 'kembali_kategori'.")
     except Exception as e:
-        # Jika gagal menghapus, biarkan saja (logging sudah cukup)
-        logging.warning(f"Gagal menghapus pesan bot ID: {message_to_delete_id} saat {action}. Error: {e}")
+        logging.warning(f"Gagal menghapus pesan bot nominal saat 'kembali_kategori'. Error: {e}")
         pass
-    
-    # --------------------------------------------------------------------------
-    
-    if action == 'kembali_kategori':
-        # ... (Logika kembali_kategori yang lama) ...
-        return GET_NOMINAL
 
-    elif action == 'kembali_nominal':
-        
-        # 1. Hapus data input keterangan yang mungkin sudah ada
-        context.user_data.pop('keterangan', None)
-        
-        # 2. Hapus ID pesan permintaan keterangan dari user_data (sudah terhapus di layar, tapi pastikan data bersih)
-        context.user_data.pop('description_request_message_id', None)
-        
-        # 3. KIRIM ULANG PESAN PERMINTAAN NOMINAL
-        
-        transaksi = context.user_data.get('transaksi', 'N/A')
-        kategori_nama = context.user_data.get('kategori_nama', 'N/A')
-        
-        text = f"Anda memilih *Transaksi {transaksi}* dengan *Kategori {kategori_nama}*.\n\n"
-        text += "Silakan masukkan *Nominal baru* (hanya angka, tanpa titik/koma/Rp):"
-        
-        # Kirim pesan baru dengan opsi 'Kembali ke Kategori'
-        sent_message = await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=get_menu_kembali('kembali_kategori'), 
-            parse_mode='Markdown'
-        )
-        
-        # Simpan ID pesan permintaan nominal yang baru agar bisa dihapus oleh get_nominal
-        context.user_data['nominal_request_message_id'] = sent_message.message_id
-        
-        # 4. PINDAH STATE ke tempat input nominal (GET_DESCRIPTION)
-        return GET_DESCRIPTION 
+    # Hapus ID pesan nominal_request_message_id dari user_data (sebagai cleanup)
+    context.user_data.pop('nominal_request_message_id', None)
+    
+    kategori_dict = context.user_data.get('kategori_dict', {})
+    transaksi = context.user_data.get('transaksi', 'N/A')
 
-    return ConversationHandler.END # Fallback jika action tidak ditemukan
+    # 2. Memunculkan kembali menu kategori
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"Silakan pilih *Kategori* untuk transaksi *{transaksi}*:",
+        reply_markup=get_menu_kategori(kategori_dict, transaksi.lower()),
+        parse_mode='Markdown'
+    )
+
+    # Kembali ke state yang menangani pemilihan kategori
+    return GET_NOMINAL # <--- State yang benar untuk memilih kategori
+
+async def go_back_to_nominal(update: Update, context):
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    # 1. Hapus pesan bot yang berisi perintah pengisian Keterangan
+    try:
+        await query.answer()
+        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id) 
+        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {query.message.message_id} saat 'kembali_nominal'.")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan bot keterangan saat 'kembali_nominal'. Error: {e}")
+        pass
+        
+    # Hapus ID pesan permintaan keterangan dari user_data
+    context.user_data.pop('description_request_message_id', None)
+    
+    # 2. Hapus Nominal Lama yang Tersimpan
+    context.user_data.pop('nominal', None)
+    # Hapus Keterangan Lama (Sudah dijamin kosong, tapi untuk keamanan)
+    context.user_data.pop('keterangan', None)
+
+    # 3. KIRIM ULANG PESAN PERMINTAAN NOMINAL
+    
+    transaksi = context.user_data.get('transaksi', 'N/A')
+    kategori_nama = context.user_data.get('kategori_nama', 'N/A')
+    
+    text = f"Anda memilih *Transaksi {transaksi}* dengan *Kategori {kategori_nama}*.\n\n"
+    text += "Silakan masukkan *Nominal baru* (hanya angka, tanpa titik/koma/Rp):"
+    
+    sent_message = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=get_menu_kembali('kembali_kategori'), # Kembali ke Kategori jika ingin mundur lagi
+        parse_mode='Markdown'
+    )
+    
+    # Simpan ID pesan permintaan nominal yang baru agar bisa dihapus oleh get_nominal
+    context.user_data['nominal_request_message_id'] = sent_message.message_id
+    
+    # 4. PINDAH STATE ke tempat input nominal
+    return GET_DESCRIPTION
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -721,12 +733,12 @@ def init_application():
                 
                 GET_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
+                    CallbackQueryHandler(go_back_to_category, pattern=r'^kembali_kategori$'),
                 ],
                 
                 PREVIEW: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
-                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'),
+                    CallbackQueryHandler(go_back_to_nominal, pattern=r'^kembali_nominal$'),
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                 ]
             },
@@ -803,6 +815,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
