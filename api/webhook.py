@@ -148,6 +148,10 @@ async def start(update: Update, context):
     # Ini memastikan pesan "Gagal menampilkan menu interaktif..." dari sesi Cold Start yang gagal dihapus.
     fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
     await delete_message_safe(context, chat_id, fallback_id_to_delete, "pesan fallback")
+
+    # KRITIS: Hapus pesan konfirmasi cancel
+    cancel_conf_id_to_delete = context.user_data.pop('cancel_confirmation_id', None)
+    await delete_message_safe(context, chat_id, cancel_conf_id_to_delete, "pesan konfirmasi cancel")
     # -----------------------------------------------------------
 
     # 2. Siapkan dan Bersihkan Data
@@ -238,29 +242,37 @@ async def cancel(update: Update, context):
         await delete_message_safe(context, chat_id, update.message.message_id, "Pesan user /cancel")
         
         # Kirim pesan konfirmasi
-        await context.bot.send_message(
+        confirmation_message = await context.bot.send_message( # <--- Tangkap pesan yang dikirim
             chat_id=chat_id,
             text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
             parse_mode='Markdown'
         )
+        # KRITIS: Simpan ID pesan konfirmasi
+        context.user_data['cancel_confirmation_id'] = confirmation_message.message_id
         
     elif update.callback_query:
         query = update.callback_query
         try:
             await query.answer()
-            # Edit pesan tombol (misalnya tombol 'cancel' di menu) menjadi pesan konfirmasi
+            
+            # Untuk pesan yang di-*edit*, kita bisa menyimpan ID pesan yang sudah ada
             await query.edit_message_text(
                 "✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
                 parse_mode='Markdown'
             )
+            # KRITIS: Simpan ID pesan yang di-edit
+            context.user_data['cancel_confirmation_id'] = query.message.message_id
+            
         except Exception as e:
-            # Jika gagal edit (misal: pesan sudah terlalu lama atau sudah dihapus), kirim pesan baru
             logging.warning(f"Gagal edit pesan saat cancel: {e}. Mengirim pesan baru.")
-            await context.bot.send_message(
+            
+            # Jika gagal edit, kirim pesan baru dan simpan ID-nya
+            confirmation_message = await context.bot.send_message(
                 chat_id=chat_id,
                 text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
                 parse_mode='Markdown'
             )
+            context.user_data['cancel_confirmation_id'] = confirmation_message.message_id
     
     # --- 3. Bersihkan sisa user_data dan Akhiri Konversasi ---
     context.user_data.clear()
@@ -746,6 +758,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
