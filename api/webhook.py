@@ -54,12 +54,9 @@ async def delete_message_safe(context, chat_id, message_id, log_prefix="Pesan"):
         return
 
     try:
-        # Menggunakan context.bot.delete_message langsung karena Vercel handler sudah di-patch 
-        # (Jika gagal, ini adalah batas konsistensi PTB di serverless)
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         logging.info(f"Berhasil menghapus {log_prefix} ID: {message_id} (Safe Delete).")
     except Exception as e:
-        # Mencatat error spesifik Event Loop
         logging.warning(f"Gagal menghapus {log_prefix} ID: {message_id}. Error: {e}")
         pass
 
@@ -149,7 +146,6 @@ async def start(update: Update, context):
 
     # --- PERBAIKAN: Hapus Pesan Fallback Lama jika ada ---
     chat_id = update.effective_chat.id
-    # Mengambil dan menghapus ID pesan fallback dari user_data
     fallback_id_to_delete = context.user_data.pop('fallback_message_id', None)
     
     await delete_message_safe(context, chat_id, fallback_id_to_delete, "pesan fallback")
@@ -180,7 +176,6 @@ async def start(update: Update, context):
             if update.callback_query:
                 try:
                     await update.callback_query.answer()
-                    # Menghapus pesan tombol yang diklik (jika ada)
                     await delete_message_safe(context, chat_id, update.callback_query.message.message_id, "pesan tombol lama")
                 except Exception:
                     pass
@@ -196,7 +191,6 @@ async def start(update: Update, context):
                     text="⚠️ Gagal menampilkan menu interaktif. Silakan coba /start lagi.",
                     parse_mode='Markdown'
                 )
-                # Menyimpan ID pesan fallback agar bisa dihapus di /start berikutnya
                 context.user_data['fallback_message_id'] = fallback_message.message_id
                 logging.warning("Pesan fallback instruksi start berhasil dikirim.")
             except Exception as fe:
@@ -320,7 +314,6 @@ async def get_nominal(update: Update, context):
     error_message_id = context.user_data.pop('error_message_id', None)
     await delete_message_safe(context, chat_id, error_message_id, "pesan error lama")
             
-    # Variabel nominal diinisialisasi None
     nominal = None
 
     # 1. VALIDASI INPUT
@@ -333,7 +326,7 @@ async def get_nominal(update: Update, context):
     except (ValueError, TypeError):
         # --- ERROR HANDLING: INPUT TIDAK VALID ---
         
-        # Hapus pesan user yang salah menggunakan Workaround
+        # Hapus pesan user yang salah
         await delete_message_safe(context, chat_id, user_message_id, "pesan user salah")
         
         # Kirim pesan error baru
@@ -407,7 +400,7 @@ async def handle_kembali_actions(update: Update, context):
     except Exception:
         pass
         
-    # Hapus pesan yang memiliki tombol ini (pesan nominal/keterangan)
+    # Hapus pesan yang memiliki tombol ini
     await delete_message_safe(context, query.message.chat_id, query.message.message_id, f"pesan kembali: {query.data}")
             
     action = query.data
@@ -429,22 +422,33 @@ async def handle_kembali_actions(update: Update, context):
         return GET_NOMINAL
 
     elif action == 'kembali_nominal':
-        # Hapus ID pesan description_request_message_id jika ada
+        # --- LOGIKA PERBAIKAN BUG UBBAH NOMINAL ---
+        
+        # 1. Hapus ID pesan deskripsi/nominal lama (sudah dilakukan di awal fungsi ini)
         context.user_data.pop('description_request_message_id', None)
         
-        nominal = context.user_data.get('nominal', 0)
-
-        text = f"Nominal: *Rp {format_nominal(nominal)}* sudah dicatat.\n\n"
-        text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
+        # 2. Hapus nilai nominal dan keterangan yang tersimpan
+        context.user_data.pop('nominal', None)
+        context.user_data.pop('keterangan', None)
         
+        # 3. Siapkan pesan untuk meminta nominal baru
+        kategori_nama = context.user_data.get('kategori_nama', 'N/A')
+        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {kategori_nama}*.\n\n"
+        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
+        
+        # 4. Kirim pesan permintaan nominal baru
         sent_message = await context.bot.send_message(
             chat_id=chat_id,
             text=text,
-            reply_markup=get_menu_kembali('kembali_nominal'),
+            reply_markup=get_menu_kembali('kembali_kategori'), 
             parse_mode='Markdown'
         )
-        context.user_data['description_request_message_id'] = sent_message.message_id
-        return PREVIEW
+        
+        # Simpan ID pesan permintaan nominal yang baru
+        context.user_data['nominal_request_message_id'] = sent_message.message_id
+        
+        # 5. Pindah state ke GET_DESCRIPTION (state yang menerima input nominal)
+        return GET_DESCRIPTION
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -523,9 +527,9 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        # ... Logic Ubah Nominal ...
+        # --- LOGIKA PERBAIKAN UBBAH NOMINAL ---
         context.user_data.pop('nominal', None)
-        context.user_data.pop('keterangan', None) # Hapus keterangan juga agar alur tetap bersih
+        context.user_data.pop('keterangan', None) # Hapus keterangan agar alur kembali bersih
         
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
         text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
@@ -537,8 +541,7 @@ async def handle_preview_actions(update: Update, context):
              reply_markup=get_menu_kembali('kembali_kategori'),
              parse_mode='Markdown'
            )
-        context.user_data['nominal_request_message_id'] = sent_message.message_id
-        
+        context.user_data['nominal_request_message_id'] = sent_message.message_id # Simpan ID
         return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
@@ -577,7 +580,6 @@ def init_application():
         return None
 
     try:
-        # Application.builder() harus dipanggil sebelum loop dibuat/diset.
         application = Application.builder().token(TOKEN).build()
         
         conv_handler = ConversationHandler(
@@ -653,8 +655,7 @@ def flask_webhook_handler():
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         
-        # 3. PANGGIL INITIALIZE PADA SETIAP REQUEST (Mengatasi "bound to a different event loop")
-        # Meskipun tidak selalu efisien, ini adalah solusi paling andal di Vercel
+        # 3. PANGGIL INITIALIZE PADA SETIAP REQUEST
         new_loop.run_until_complete(application_instance.initialize())
         logging.info("Application instance berhasil di-reset koneksi HTTP-nya.")
             
