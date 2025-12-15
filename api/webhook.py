@@ -172,6 +172,10 @@ async def start(update: Update, context):
             )
             logging.info(f"Pesan 'start' berhasil dikirim ke chat {chat_id}")
             
+            # --- PERBAIKAN A: Simpan ID pesan menu transaksi yang baru ---
+            context.user_data['start_menu_id'] = menu_message.message_id
+            # -----------------------------------------------------------
+            
             # 2. Penanganan Query Lama
             if update.callback_query:
                 try:
@@ -213,9 +217,10 @@ async def cancel(update: Update, context):
         'nominal_request_message_id', 
         'description_request_message_id',
         'fallback_message_id',
-        'category_menu_id',       # Menghapus pesan daftar kategori
-        'preview_message_id'      # Menghapus pesan ringkasan/preview
-        # Tambahkan ID pesan lain jika nanti ada (misal: 'preview_message_id')
+        'category_menu_id',       
+        'preview_message_id',     
+        'start_menu_id'
+        # ----------------------------------------------------
     ]
     
     deleted_count = 0
@@ -742,6 +747,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
