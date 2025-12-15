@@ -524,26 +524,28 @@ async def go_back_to_category(update: Update, context):
 async def go_back_to_nominal(update: Update, context):
     query = update.callback_query
     chat_id = query.message.chat_id
+    message_to_delete_id = query.message.message_id # ID pesan Keterangan yang ingin dihapus
 
-    # 1. Hapus pesan bot yang berisi perintah pengisian Keterangan
+    # 1. Menjawab Query dan Mencoba Hapus Pesan Bot (Pesan Keterangan)
     try:
         await query.answer()
-        # Menggunakan ID pesan yang sedang aktif (yang ditekan tombolnya)
-        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id) 
-        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {query.message.message_id} saat 'kembali_nominal'.")
+        
+        # Ini adalah baris yang harus menghapus pesan Keterangan
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_to_delete_id) 
+        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {message_to_delete_id} saat 'kembali_nominal'.")
     except Exception as e:
-        # PENTING: Jika gagal delete, log error tapi biarkan alur berlanjut
+        # Jika gagal delete, log error tapi biarkan alur berlanjut
         logging.warning(f"Gagal menghapus pesan bot keterangan saat 'kembali_nominal'. Error: {e}")
         pass
         
     # Hapus ID pesan permintaan keterangan dari user_data
     context.user_data.pop('description_request_message_id', None)
     
-    # 2. Hapus Nominal Lama yang Tersimpan (sesuai permintaan, untuk input ulang)
+    # 2. Hapus Nominal Lama yang Tersimpan (sesuai alur: kembali untuk input ulang Nominal)
     context.user_data.pop('nominal', None)
     context.user_data.pop('keterangan', None)
 
-    # 3. KIRIM ULANG PESAN PERMINTAAN NOMINAL
+    # 3. KIRIM ULANG PESAN PERMINTAAN NOMINAL BARU
     
     transaksi = context.user_data.get('transaksi', 'N/A')
     kategori_nama = context.user_data.get('kategori_nama', 'N/A')
@@ -558,9 +560,10 @@ async def go_back_to_nominal(update: Update, context):
         parse_mode='Markdown'
     )
     
+    # Simpan ID pesan permintaan nominal yang baru agar bisa dihapus oleh get_nominal
     context.user_data['nominal_request_message_id'] = sent_message.message_id
     
-    # 4. PINDAH STATE
+    # 4. PINDAH STATE ke tempat input nominal
     return GET_DESCRIPTION
 
 async def handle_preview_actions(update: Update, context):
@@ -822,3 +825,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
