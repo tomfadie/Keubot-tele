@@ -42,7 +42,7 @@ KATEGORI_KELUAR = {
     'Kendaraan': 'keluar_kendaraan', 'Kesehatan': 'keluar_kesehatan', 'Langganan': 'keluar_langganan',
     'Makan': 'keluar_makan', 'Pajak': 'keluar_pajak', 'Pakaian': 'keluar_pakaian',
     'Pendidikan': 'keluar_pendidikan', 'Perawatan': 'keluar_perawatan',
-    'RumahTangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
+    'Rumah Tangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
 }
 
 # --- FUNGSI UTILITY KRITIS (Workaround Event Loop) ---
@@ -204,18 +204,59 @@ async def start(update: Update, context):
     return CHOOSE_CATEGORY
 
 async def cancel(update: Update, context):
+    chat_id = update.effective_chat.id
+    
+    # --- 1. Hapus semua ID pesan interaktif yang tersimpan ---
+    
+    # List semua ID yang mungkin perlu dihapus saat pembatalan
+    ids_to_check = [
+        'nominal_request_message_id', 
+        'description_request_message_id',
+        'fallback_message_id',
+        # Tambahkan ID pesan lain jika nanti ada (misal: 'preview_message_id')
+    ]
+    
+    deleted_count = 0
+    for key in ids_to_check:
+        message_id = context.user_data.pop(key, None)
+        if message_id:
+            await delete_message_safe(context, chat_id, message_id, f"Pesan {key}")
+            deleted_count += 1
+            
+    logging.info(f"Handler 'cancel': {deleted_count} pesan interaktif lama berhasil dihapus.")
+    
+    # --- 2. Hapus pesan User / Cancel atau Edit Pesan Callback ---
+
     if update.message:
-        await update.message.reply_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
+        # Hapus pesan /cancel dari pengguna
+        await delete_message_safe(context, chat_id, update.message.message_id, "Pesan user /cancel")
+        
+        # Kirim pesan konfirmasi
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
+            parse_mode='Markdown'
+        )
+        
     elif update.callback_query:
+        query = update.callback_query
         try:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
-        except Exception:
+            await query.answer()
+            # Edit pesan tombol (misalnya tombol 'cancel' di menu) menjadi pesan konfirmasi
+            await query.edit_message_text(
+                "✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            # Jika gagal edit (misal: pesan sudah terlalu lama atau sudah dihapus), kirim pesan baru
+            logging.warning(f"Gagal edit pesan saat cancel: {e}. Mengirim pesan baru.")
             await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
+                chat_id=chat_id,
+                text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
+                parse_mode='Markdown'
             )
     
+    # --- 3. Bersihkan sisa user_data dan Akhiri Konversasi ---
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -687,5 +728,6 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
