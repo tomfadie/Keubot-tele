@@ -642,35 +642,35 @@ async def handle_preview_actions(update: Update, context):
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-    logging.info("Aksi Ubah Nominal Dijalankan.")
+        logging.info("Aksi Ubah Nominal Dijalankan.")
     
-    # --- 1. CLEANUP DATA LAMA ---
-    # Hapus Nominal lama
-    context.user_data.pop('nominal', None) 
-    # Hapus Keterangan lama (WAJIB dihapus agar alur meminta input keterangan baru)
-    context.user_data.pop('keterangan', None) 
-    # Hapus ID pesan permintaan Keterangan lama (Jika ada)
-    context.user_data.pop('description_request_message_id', None)
+        # --- 1. CLEANUP DATA LAMA ---
+        # Hapus Nominal lama
+        context.user_data.pop('nominal', None) 
+        # Hapus Keterangan lama (WAJIB dihapus agar alur meminta input keterangan baru)
+        context.user_data.pop('keterangan', None) 
+        # Hapus ID pesan permintaan Keterangan lama (Jika ada)
+        context.user_data.pop('description_request_message_id', None)
     
-    # --- 2. KIRIM PERMINTAAN NOMINAL BARU ---
+        # --- 2. KIRIM PERMINTAAN NOMINAL BARU ---
     
-    # Pesan Preview (yang ditekan tombolnya) sudah dihapus di awal handle_preview_actions
+            # Pesan Preview (yang ditekan tombolnya) sudah dihapus di awal handle_preview_actions
     
-    text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
-    text += "Sekarang, *tuliskan jumlah nominal transaksi baru* (hanya angka, tanpa titik/koma/Rp):"
+        text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
+        text += "Sekarang, *tuliskan jumlah nominal transaksi baru* (hanya angka, tanpa titik/koma/Rp):"
     
-    sent_message = await context.bot.send_message(
-         chat_id,
-         text,
-         reply_markup=get_menu_kembali('kembali_kategori'),
-         parse_mode='Markdown'
-       )
-       
-    # Simpan ID pesan permintaan nominal yang baru, agar bisa dihapus oleh get_nominal
-    context.user_data['nominal_request_message_id'] = sent_message.message_id
-    
-    # 3. PINDAH STATE
-    return GET_DESCRIPTION
+        sent_message = await context.bot.send_message(
+             chat_id,
+             text,
+             reply_markup=get_menu_kembali('kembali_kategori'),
+             parse_mode='Markdown'
+           )
+           
+        # Simpan ID pesan permintaan nominal yang baru, agar bisa dihapus oleh get_nominal
+        context.user_data['nominal_request_message_id'] = sent_message.message_id
+        
+        # 3. PINDAH STATE
+        return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
         logging.info("Aksi Ubah Keterangan Dijalankan.")
@@ -818,6 +818,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
