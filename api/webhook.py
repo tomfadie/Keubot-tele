@@ -213,6 +213,8 @@ async def cancel(update: Update, context):
         'nominal_request_message_id', 
         'description_request_message_id',
         'fallback_message_id',
+        'category_menu_id',       # Menghapus pesan daftar kategori
+        'preview_message_id'      # Menghapus pesan ringkasan/preview
         # Tambahkan ID pesan lain jika nanti ada (misal: 'preview_message_id')
     ]
     
@@ -277,33 +279,42 @@ async def choose_route(update: Update, context):
     if data == 'transaksi_masuk':
         context.user_data['transaksi'] = 'Masuk'
         context.user_data['kategori_dict'] = KATEGORI_MASUK
-        text = "Silahkan Pilih Kategori dari Pemasukan"
+        text = "Silahkan pilih *Kategori* dari Pemasukan:"
     elif data == 'transaksi_keluar':
         context.user_data['transaksi'] = 'Keluar'
         context.user_data['kategori_dict'] = KATEGORI_KELUAR
-        text = "Silahkan Pilih Kategori dari Pengeluaran"
+        text = "Silahkan pilih *Kategori* dari Pengeluaran:"
     elif data == 'transaksi_tabungan':
         context.user_data['transaksi'] = 'Tabungan'
         context.user_data['kategori_dict'] = KATEGORI_KELUAR
-        text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih Kategori:"
+        text = "Anda memilih *Tabungan*. Pengeluaran akan dilakukan dari Tabungan. Silahkan Pilih *Kategori*:"
     else:
         await context.bot.send_message(chat_id, "Terjadi kesalahan. Silakan mulai ulang dengan /start.")
         return ConversationHandler.END
 
     try:
+        # Coba edit pesan yang membawa tombol transaksi (menu awal)
         await query.edit_message_text(
             text,
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
+        
+        # --- PERBAIKAN A: Simpan ID pesan menu kategori yang sekarang (setelah di edit) ---
+        context.user_data['category_menu_id'] = query.message.message_id
+        # ---------------------------------------------------------------------------------
+
     except Exception as e:
         logging.error(f"Gagal edit pesan di choose_route: {e}. Mengirim pesan baru.")
-        await context.bot.send_message(
+        new_message = await context.bot.send_message(
             chat_id,
             text,
             reply_markup=get_menu_kategori(context.user_data['kategori_dict'], data),
             parse_mode='Markdown'
         )
+        # --- PERBAIKAN A: Simpan ID pesan menu kategori yang baru ---
+        context.user_data['category_menu_id'] = new_message.message_id
+        # -----------------------------------------------------------
         
     return GET_NOMINAL
 
@@ -425,11 +436,14 @@ async def get_description(update: Update, context):
             
     preview_text = generate_preview(context.user_data)
     
-    await update.message.reply_text(
+    preview_message = await update.message.reply_text(
         preview_text,
         reply_markup=get_menu_preview(),
         parse_mode='Markdown'
     )
+    context.user_data['preview_message_id'] = preview_message.message_id
+    # ---------------------------------------------------------
+    
     return PREVIEW
     
 async def handle_kembali_actions(update: Update, context):
@@ -728,6 +742,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
