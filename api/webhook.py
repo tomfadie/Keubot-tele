@@ -486,15 +486,22 @@ async def get_description(update: Update, context):
 async def go_back_to_category(update: Update, context):
     query = update.callback_query
     chat_id = query.message.chat_id
+    message_to_delete_id = query.message.message_id # ID pesan nominal yang ingin dihapus
     
-    # 1. Menjawab Query dan Mencoba Hapus Pesan Bot (Pesan Nominal)
+    # 1. Menjawab Query
     try:
         await query.answer()
-        # Menggunakan ID pesan yang sedang aktif (yang ditekan tombolnya)
-        await context.bot.delete_message(chat_id=chat_id, message_id=query.message.message_id)
-        logging.info(f"Berhasil menghapus pesan bot nominal ID: {query.message.message_id} saat 'kembali_kategori'.")
+    except Exception:
+        pass
+        
+    # 2. Blok KHUSUS untuk mengatasi RuntimeError pada delete_message
+    try:
+        # Panggil bot.delete_message secara eksplisit.
+        # Jika error persisten, ini adalah solusi paling bersih untuk PTB di serverless
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_to_delete_id)
+        logging.info(f"Berhasil menghapus pesan bot nominal ID: {message_to_delete_id} saat 'kembali_kategori'.")
     except Exception as e:
-        # PENTING: Jika gagal delete, log error tapi biarkan alur berlanjut
+        # Jika gagal delete, coba lagi dengan cara lain (hanya sebagai debugging/fallback)
         logging.warning(f"Gagal menghapus pesan bot nominal saat 'kembali_kategori'. Error: {e}")
         pass
 
@@ -806,4 +813,5 @@ def flask_webhook_handler():
         logging.error(f"Gagal memproses update Telegram (Loop/Process): {e}")
         # Jika terjadi kesalahan saat memproses update, KEMBALIKAN 200 OK untuk mencegah Telegram me-retry.
         return 'OK', 200
+
 
