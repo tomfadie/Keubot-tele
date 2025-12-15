@@ -81,12 +81,12 @@ def generate_preview(user_data):
     keterangan = user_data.get('keterangan', 'N/A')
     nominal_formatted = format_nominal(nominal)
     
-    preview_text = f"*Inputan Anda:*\n\n"
+    preview_text = f"*Ringkasan Pencatatan:*\n\n"
     preview_text += f"*Transaksi:* {transaksi}\n"
     preview_text += f"*Kategori:* {kategori_nama}\n"
     preview_text += f"*Nominal:* Rp {nominal_formatted}\n"
     preview_text += f"*Keterangan:* {keterangan}\n\n"
-    preview_text += f"`{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}`"
+    preview_text += f"*{transaksi} Rp {nominal_formatted} {kategori_nama} {keterangan}*"
     return preview_text
 
 def debug_check_ids(context):
@@ -488,7 +488,7 @@ async def handle_preview_actions(update: Update, context):
         kategori_nama = payload.get('kategori_nama', 'N/A')
         keterangan = payload.get('keterangan', 'N/A')
 
-        ringkasan_data = f"*Ringkasan:* {transaksi_type} Rp {nominal_formatted} - {kategori_nama} ({keterangan})"
+        ringkasan_data = f"*Transaksi:* {transaksi_type} Rp {nominal_formatted} - {kategori_nama} ({keterangan})"
 
         if success:
             response_text = "✅ *Transaksi Berhasil Dicatat!*\nData Anda telah dikirim ke Spreadsheet.\n\n"
@@ -673,3 +673,4 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
