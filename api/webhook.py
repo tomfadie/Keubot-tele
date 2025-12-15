@@ -145,16 +145,6 @@ async def start(update: Update, context):
             # PENTING: Menangkap dan mencatat error spesifik (misalnya Event loop is closed)
             logging.warning(f"Gagal menghapus pesan fallback lama ID: {fallback_id_to_delete}. Error: {e}")
             pass
-            
-    # --- PERBAIKAN BARU: Hapus Pesan CANCEL Lama ---
-    cancel_id_to_delete = context.user_data.pop('cancel_message_id', None) 
-    if cancel_id_to_delete:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=cancel_id_to_delete)
-            logging.info(f"Berhasil menghapus pesan cancel lama ID: {cancel_id_to_delete}")
-        except Exception as e:
-            logging.warning(f"Gagal menghapus pesan cancel lama ID: {cancel_id_to_delete}. Error: {e}")
-            pass
     # ----------------------------------------------------
 
     user_data_identity = {
@@ -214,63 +204,19 @@ async def start(update: Update, context):
     return CHOOSE_CATEGORY
 
 async def cancel(update: Update, context):
-    chat_id = update.effective_chat.id
-    
-    # --- 1. Hapus Pesan Bot dari State Terakhir ---
-    message_ids_to_delete = []
-    # Kumpulkan semua ID pesan yang harus dihapus
-    for key in ['nominal_request_message_id', 'description_request_message_id', 'error_message_id']:
-        msg_id = context.user_data.pop(key, None)
-        if msg_id:
-            message_ids_to_delete.append(msg_id)
-            
-    for msg_id in message_ids_to_delete:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {msg_id} (Cancel)")
-        except Exception as e:
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {msg_id} (Cancel). Error: {e}")
-            pass
-            
-    # --- 2. Kirim Pesan Konfirmasi Pembatalan & Tangkap ID-nya ---
-    response_text = "Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
-    sent_message = None # Inisialisasi variabel pesan yang terkirim
-
     if update.message:
-        try:
-            sent_message = await update.message.reply_text(response_text)
-            # Hapus pesan user /cancel
-            try:
-                await update.message.delete()
-            except Exception:
-                pass
-        except Exception as e:
-             logging.error(f"Gagal mengirim/menghapus pesan konfirmasi cancel: {e}")
-             
+        await update.message.reply_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
     elif update.callback_query:
-        query = update.callback_query
         try:
-            await query.answer()
-            # Mencoba edit pesan callback terakhir
-            sent_message = await query.message.edit_text(response_text)
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text("Pencatatan dibatalkan. Gunakan /start untuk memulai lagi.")
         except Exception:
-            # Fallback jika gagal edit (pesan sudah dihapus)
-            sent_message = await context.bot.send_message(
-                chat_id=chat_id,
-                text=response_text
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Pencatatan dibatalkan. Gunakan /start untuk memulai lagi."
             )
-            
-    # --- 3. Bersihkan Data Konversasi dan Simpan ID Cancel ---
-    # Simpan ID pesan konfirmasi agar tidak ikut terhapus oleh .clear() sementara
-    cancel_id_to_save = sent_message.message_id if sent_message else None
     
-    # Hapus semua data transaksi lama (nominal, keterangan, kategori, dll.)
     context.user_data.clear()
-    
-    # Kembalikan ID pesan konfirmasi agar bisa dihapus oleh /start berikutnya
-    if cancel_id_to_save:
-        context.user_data['cancel_message_id'] = cancel_id_to_save
-    
     return ConversationHandler.END
 
 async def choose_route(update: Update, context):
@@ -355,45 +301,46 @@ async def choose_category(update: Update, context):
 
     return GET_DESCRIPTION
 
-import asyncio
-# ... (import lainnya) ...
-
-# FUNGSI HELPER UNTUK MENGATASI RUNTIME ERROR DI VERCEL
-async def delete_message_with_workaround(context, chat_id, message_id, log_prefix):
-    """Menghapus pesan menggunakan pemanggilan async standar."""
-    
-    if not message_id:
-        return
-
-    try:
-        # Panggil bot.delete_message secara langsung dengan await
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        logging.info(f"Berhasil menghapus {log_prefix} ID: {message_id} (Simple Await).")
-    except Exception as e:
-        # PENTING: Jika error yang muncul adalah 'Unknown error in HTTP implementation: RuntimeError' lagi, 
-        # itu berarti perbaikan Vercel handler belum sepenuhnya mengatasi masalah ini secara konsisten, 
-        # tetapi secara kode, ini adalah cara yang benar.
-        logging.warning(f"Gagal menghapus {log_prefix} ID: {message_id}. Error: {e}")
-        pass
-        
-
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
     # --- PANGGILAN FUNGSI DEBUG UNTUK VERIFIKASI ID ---
-    # Pastikan debug_check_ids() tidak memanggil delete_message secara internal
-    # debug_check_ids(context) 
+    debug_check_ids(context) 
     # --------------------------------------------------
 
-    # Hapus pesan error lama (jika ada) menggunakan Workaround
     error_message_id = context.user_data.pop('error_message_id', None)
-    await delete_message_with_workaround(context, chat_id, error_message_id, "pesan error")
-        
-    # Variabel nominal diinisialisasi None
-    nominal = None
+    if error_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=error_message_id)
+        except Exception:
+            pass
+            
+    bot_message_to_delete_id = context.user_data.get('nominal_request_message_id')
     
-    # --- 1. VALIDASI & PENENTUAN NOMINAL ---
+    try:
+        nominal_str = re.sub(r'\D', '', update.message.text)
+        nominal = int(nominal_str)
+        if nominal <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        # Hapus pesan user yang salah
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        except Exception:
+            pass
+            
+        error_msg = await update.message.reply_text(
+            "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
+            parse_mode='Markdown'
+        )
+        context.user_data['error_message_id'] = error_msg.message_id
+        
+        return GET_DESCRIPTION
+
+    # --- PERBAIKAN KRITIS: Pisahkan & Balik Urutan Penghapusan ---
+
+    # 1. VALIDASI & PENENTUAN NOMINAL
     try:
         nominal_str = re.sub(r'\D', '', update.message.text)
         nominal = int(nominal_str)
@@ -404,35 +351,34 @@ async def get_nominal(update: Update, context):
         context.user_data['nominal'] = nominal
         
     except (ValueError, TypeError):
-        # --- ERROR HANDLING: INPUT TIDAK VALID ---
-        
-        # Hapus pesan user yang salah menggunakan Workaround
-        await delete_message_with_workaround(context, chat_id, user_message_id, "pesan user salah")
-        
-        # Kirim pesan error baru
-        error_msg = await update.message.reply_text(
-            "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
-            parse_mode='Markdown'
-        )
-        context.user_data['error_message_id'] = error_msg.message_id
-        
+        # ... (error handling dan delete message untuk input salah) ...
         return GET_DESCRIPTION
 
     # --- Penghapusan (Hanya dijalankan jika validasi sukses) ---
 
-   # 2. Hapus pesan User (Input Nominal yang Valid)
-    await delete_message_with_workaround(context, chat_id, user_message_id, "pesan user valid")
+    # 2. Hapus pesan User (Input Nominal yang Valid)
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
+        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
+        pass
 
     # 3. Hapus pesan Bot Lama (Permintaan Nominal)
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
-    await delete_message_with_workaround(context, chat_id, bot_message_to_delete_id, "pesan bot lama")
+    if bot_message_to_delete_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
+            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
+            pass
             
-    # --- Lanjutkan ke alur bot berikutnya (Validasi Sukses) ---
+    # --- Lanjutkan ke alur bot berikutnya ---
     
-    # 4. AMBIL VARIABEL & KIRIM PERMINTAAN KETERANGAN
+    # 4. AMBIL VARIABEL (sudah aman)
     kategori_nama = context.user_data.get('kategori_nama', 'Kategori Tidak Ditemukan')
     
-    # Memastikan format_nominal telah didefinisikan di tempat lain
     text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{kategori_nama}*.\n\n"
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Air PDAM'):"
     
@@ -441,7 +387,7 @@ async def get_nominal(update: Update, context):
         reply_markup=get_menu_kembali('kembali_nominal'), 
         parse_mode='Markdown'
     )
-    context.user_data['description_request_message_id'] = sent_message.message_id
+    context.user_data['description_request_message_id'] = sent_message.message_id 
     
     return PREVIEW
 async def get_description(update: Update, context):
@@ -451,7 +397,7 @@ async def get_description(update: Update, context):
     
     keterangan = update.message.text
     context.user_data['keterangan'] = keterangan
-        
+    
     # --- PERBAIKAN: Membalik Urutan Penghapusan ---
 
    # 1. Hapus pesan User Input (Keterangan) - PRIORITAS 1 (Pesan yang baru masuk)
@@ -473,7 +419,8 @@ async def get_description(update: Update, context):
             pass
     
     # ----------------------------------------------------
-         
+    keterangan = update.message.text
+    context.user_data['keterangan'] = keterangan        
     preview_text = generate_preview(context.user_data)
     
     await update.message.reply_text(
@@ -483,106 +430,62 @@ async def get_description(update: Update, context):
     )
     return PREVIEW
     
-async def go_back_to_category(update: Update, context):
+async def handle_kembali_actions(update: Update, context):
     query = update.callback_query
-    chat_id = query.message.chat_id
-    message_to_delete_id = query.message.message_id # ID pesan nominal yang ingin dihapus
-    
-    # 1. Menjawab Query
     try:
         await query.answer()
+        await query.message.delete()
     except Exception:
         pass
         
-    # 2. Blok KHUSUS untuk mengatasi RuntimeError pada delete_message
-    try:
-        # Panggil bot.delete_message secara eksplisit.
-        # Jika error persisten, ini adalah solusi paling bersih untuk PTB di serverless
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_to_delete_id)
-        logging.info(f"Berhasil menghapus pesan bot nominal ID: {message_to_delete_id} saat 'kembali_kategori'.")
-    except Exception as e:
-        # Jika gagal delete, coba lagi dengan cara lain (hanya sebagai debugging/fallback)
-        logging.warning(f"Gagal menghapus pesan bot nominal saat 'kembali_kategori'. Error: {e}")
-        pass
-
-    # Hapus ID pesan nominal_request_message_id dari user_data
-    context.user_data.pop('nominal_request_message_id', None)
-    
-    kategori_dict = context.user_data.get('kategori_dict', {})
-    transaksi = context.user_data.get('transaksi', 'N/A')
-
-    # 2. Memunculkan kembali menu kategori
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=f"Silakan pilih *Kategori* untuk transaksi *{transaksi}*:",
-        reply_markup=get_menu_kategori(kategori_dict, transaksi.lower()),
-        parse_mode='Markdown'
-    )
-
-    return GET_NOMINAL # <--- State yang benar untuk memilih kategori
-
-async def go_back_to_nominal(update: Update, context):
-    query = update.callback_query
+    action = query.data
     chat_id = query.message.chat_id
-    message_to_delete_id = query.message.message_id # ID pesan Keterangan yang ingin dihapus
     
-    # 1. Menjawab Query
-    try:
-        await query.answer()
-    except Exception:
-        pass
-        
-    # 2. Hapus Pesan Bot (MENGGUNAKAN WORKAROUND THREADSAFE)
-    try:
-        # Dapatkan event loop yang sedang aktif
-        current_loop = asyncio.get_event_loop()
-        
-        # Eksekusi delete_message dalam loop secara sinkron (Workaround Vercel)
-        # Gunakan bot dari context.application (lebih aman dari context.bot)
-        # Catatan: context.bot adalah instance ExtBot
-        bot_instance = context.application.bot
-        
-        # Buat Future untuk operasi delete_message
-        future = bot_instance.delete_message(chat_id=chat_id, message_id=message_to_delete_id)
-        
-        # Jalankan Future ini secara sinkron dalam loop yang sama.
-        # Ini mengatasi masalah "bound to a different event loop"
-        await asyncio.wrap_future(future)
-        
-        logging.info(f"Berhasil menghapus pesan bot keterangan ID: {message_to_delete_id} menggunakan Threadsafe Workaround.")
-    except Exception as e:
-        # Jika gagal delete, log error
-        logging.warning(f"Gagal menghapus pesan bot keterangan saat 'kembali_nominal'. Error: {e}")
-        pass
-        
-    # --- LANJUTKAN ALUR STANDAR ---
-        
-    # Hapus ID pesan permintaan keterangan dari user_data
-    context.user_data.pop('description_request_message_id', None)
-    
-    # 3. Hapus Nominal Lama (untuk input ulang Nominal)
-    context.user_data.pop('nominal', None)
-    context.user_data.pop('keterangan', None)
+    if action == 'kembali_kategori':
 
-    # 4. KIRIM ULANG PESAN PERMINTAAN NOMINAL BARU
-    
-    transaksi = context.user_data.get('transaksi', 'N/A')
-    kategori_nama = context.user_data.get('kategori_nama', 'N/A')
-    
-    text = f"Anda memilih *Transaksi {transaksi}* dengan *Kategori {kategori_nama}*.\n\n"
-    text += "Silakan masukkan *Nominal baru* (hanya angka, tanpa titik/koma/Rp):"
-    
-    sent_message = await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup=get_menu_kembali('kembali_kategori'),
-        parse_mode='Markdown'
-    )
-    
-    context.user_data['nominal_request_message_id'] = sent_message.message_id
-    
-    # 5. PINDAH STATE
-    return GET_DESCRIPTION
+        # --- Perbaikan: Pastikan pesan bot terhapus dengan delete di query.message ---
+        # Pesan bot yang ditekan tombol kembalinya adalah pesan yang meminta nominal.
+        try:
+            await query.answer()
+            await query.message.delete()
+            logging.info(f"Berhasil menghapus pesan bot nominal ID: {query.message.message_id} saat 'kembali_kategori'.")
+        except Exception as e:
+            logging.warning(f"Gagal menghapus pesan bot nominal saat 'kembali_kategori'. Error: {e}")
+            pass
+
+        # Hapus ID pesan nominal_request_message_id dari user_data
+        context.user_data.pop('nominal_request_message_id', None)
+
+        kategori_dict = context.user_data.get('kategori_dict', {})
+        transaksi = context.user_data.get('transaksi', 'N/A').lower()
+
+        # Mengirim menu kategori baru (Menu Transaksi)
+        menu_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
+            reply_markup=get_menu_kategori(kategori_dict, transaksi),
+            parse_mode='Markdown'
+        )
+        # Simpan ID pesan menu kategori baru agar bisa dihapus saat pemilihan sukses
+        context.user_data['category_request_message_id'] = menu_message.message_id
+
+        return GET_NOMINAL
+
+    elif action == 'kembali_nominal':
+        # Hapus ID pesan description_request_message_id jika ada
+        context.user_data.pop('description_request_message_id', None)
+
+        text = f"Nominal: *Rp {format_nominal(context.user_data.get('nominal', 0))}* sudah dicatat.\n\n"
+        text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):"
+        
+        sent_message = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_menu_kembali('kembali_nominal'),
+            parse_mode='Markdown'
+        )
+        context.user_data['description_request_message_id'] = sent_message.message_id
+        return PREVIEW
 
 async def handle_preview_actions(update: Update, context):
     query = update.callback_query
@@ -635,7 +538,7 @@ async def handle_preview_actions(update: Update, context):
             response_text += ringkasan_data
             
             response_text += "\n\nCek Laporan Keuangan Anda pada: [Laporan Keuangan](https://docs.google.com/spreadsheets/d/1A2ephAX4I1zwxmvFlkSAeHRc7OjcN2peQqZgPsGZ8X8/edit?gid=550879818#gid=550879818)"
-            response_text += "\nJika ingin melakukan pencatatan baru silahkan tekan /start"
+            response_text += "\n\nJika ingin melakukan pencatatan baru silahkan tekan /start"
         else:
             response_text = "❌ *Pencatatan Gagal!*\nTerjadi kesalahan saat mengirim data ke server. Silakan coba lagi /start"
 
@@ -660,62 +563,36 @@ async def handle_preview_actions(update: Update, context):
         
         await context.bot.send_message(
             chat_id,
-            f"Silakan pilih *Kategori baru* untuk transaksi *{context.user_data['transaksi']}*:",
+            f"Silakan pilih Kategori baru untuk {context.user_data['transaksi']}:",
             reply_markup=get_menu_kategori(kategori_dict, transaksi),
             parse_mode='Markdown'
         )
         return GET_NOMINAL
         
     elif action == 'ubah_nominal':
-        logging.info("Aksi Ubah Nominal Dijalankan.")
-    
-        # --- 1. CLEANUP DATA LAMA ---
-        # Hapus Nominal lama
-        context.user_data.pop('nominal', None) 
-        # Hapus Keterangan lama (WAJIB dihapus agar alur meminta input keterangan baru)
-        context.user_data.pop('keterangan', None) 
-        # Hapus ID pesan permintaan Keterangan lama (Jika ada)
-        context.user_data.pop('description_request_message_id', None)
-    
-        # --- 2. KIRIM PERMINTAAN NOMINAL BARU ---
-    
-            # Pesan Preview (yang ditekan tombolnya) sudah dihapus di awal handle_preview_actions
-    
+        # ... Logic Ubah Nominal ...
+        context.user_data.pop('nominal', None)
+        
         text = f"Anda memilih *Transaksi {context.user_data['transaksi']}* dengan *Kategori {context.user_data['kategori_nama']}*.\n\n"
-        text += "Sekarang, *tuliskan jumlah nominal transaksi baru* (hanya angka, tanpa titik/koma/Rp):"
-    
-        sent_message = await context.bot.send_message(
+        text += "Sekarang, *tuliskan jumlah nominal transaksi* (hanya angka, tanpa titik/koma/Rp):"
+        
+        await context.bot.send_message(
              chat_id,
              text,
              reply_markup=get_menu_kembali('kembali_kategori'),
              parse_mode='Markdown'
            )
-           
-        # Simpan ID pesan permintaan nominal yang baru, agar bisa dihapus oleh get_nominal
-        context.user_data['nominal_request_message_id'] = sent_message.message_id
-        
-        # 3. PINDAH STATE
         return GET_DESCRIPTION
 
     elif action == 'ubah_keterangan':
-        logging.info("Aksi Ubah Keterangan Dijalankan.")
-        
-        # --- 1. Hapus Keterangan Lama ---
-        context.user_data.pop('keterangan', None) 
-        # ID pesan permintaan nominal/kategori/preview lain sudah ditangani di alur sebelumnya
-        
-        # --- 2. KIRIM PERMINTAAN KETERANGAN BARU ---
-        
-        sent_message = await context.bot.send_message( # <--- Tangkap objek pesan
+        # ... Logic Ubah Keterangan ...
+        context.user_data.pop('keterangan', None)
+        await context.bot.send_message(
              chat_id,
-             "Sekarang, tambahkan *Keterangan baru* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
+             "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Listrik'):",
              reply_markup=get_menu_kembali('kembali_nominal'),
              parse_mode='Markdown'
            )
-           
-        # --- PERBAIKAN KRITIS: SIMPAN ID PESAN BARU ---
-        context.user_data['description_request_message_id'] = sent_message.message_id
-        
         return PREVIEW
 
     return PREVIEW
@@ -761,12 +638,12 @@ def init_application():
                 
                 GET_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_nominal),
-                    CallbackQueryHandler(go_back_to_category, pattern=r'^kembali_kategori$'),
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_kategori$'),
                 ],
                 
                 PREVIEW: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_description),
-                    CallbackQueryHandler(go_back_to_nominal, pattern=r'^kembali_nominal$'),
+                    CallbackQueryHandler(handle_kembali_actions, pattern=r'^kembali_nominal$'),
                     CallbackQueryHandler(handle_preview_actions, pattern=r'^aksi_.*|ubah_.*$'),
                 ]
             },
@@ -843,8 +720,3 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
-
-
-
-
-
