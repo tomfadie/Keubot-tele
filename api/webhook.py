@@ -355,46 +355,49 @@ async def choose_category(update: Update, context):
 
     return GET_DESCRIPTION
 
+import asyncio
+# ... (import lainnya) ...
+
+# FUNGSI HELPER UNTUK MENGATASI RUNTIME ERROR DI VERCEL
+async def delete_message_with_workaround(context, chat_id, message_id, log_prefix):
+    """Menghapus pesan menggunakan asyncio.wrap_future untuk mengatasi RuntimeError di serverless."""
+    
+    if not message_id:
+        return
+
+    try:
+        # Dapatkan instance bot dari application
+        bot_instance = context.application.bot
+        
+        # Buat Future untuk operasi delete_message
+        future = bot_instance.delete_message(chat_id=chat_id, message_id=message_id)
+        
+        # Jalankan Future ini secara aman dalam loop yang sama (Workaround)
+        await asyncio.wrap_future(future)
+        logging.info(f"Berhasil menghapus {log_prefix} ID: {message_id} menggunakan Workaround.")
+    except Exception as e:
+        logging.warning(f"Gagal menghapus {log_prefix} ID: {message_id}. Error: {e}")
+        # Jangan raise exception, biarkan alur berjalan
+        pass
+        
+
 async def get_nominal(update: Update, context):
     chat_id = update.message.chat_id
     user_message_id = update.message.message_id
     
     # --- PANGGILAN FUNGSI DEBUG UNTUK VERIFIKASI ID ---
-    debug_check_ids(context) 
+    # Pastikan debug_check_ids() tidak memanggil delete_message secara internal
+    # debug_check_ids(context) 
     # --------------------------------------------------
 
+    # Hapus pesan error lama (jika ada) menggunakan Workaround
     error_message_id = context.user_data.pop('error_message_id', None)
-    if error_message_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=error_message_id)
-        except Exception:
-            pass
-            
-    bot_message_to_delete_id = context.user_data.get('nominal_request_message_id')
-    
-    try:
-        nominal_str = re.sub(r'\D', '', update.message.text)
-        nominal = int(nominal_str)
-        if nominal <= 0:
-            raise ValueError
-    except (ValueError, TypeError):
-        # Hapus pesan user yang salah
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
-        except Exception:
-            pass
-            
-        error_msg = await update.message.reply_text(
-            "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
-            parse_mode='Markdown'
-        )
-        context.user_data['error_message_id'] = error_msg.message_id
+    await delete_message_with_workaround(context, chat_id, error_message_id, "pesan error")
         
-        return GET_DESCRIPTION
-
-    # --- PERBAIKAN KRITIS: Pisahkan & Balik Urutan Penghapusan ---
-
-    # 1. VALIDASI & PENENTUAN NOMINAL
+    # Variabel nominal diinisialisasi None
+    nominal = None
+    
+    # --- 1. VALIDASI & PENENTUAN NOMINAL ---
     try:
         nominal_str = re.sub(r'\D', '', update.message.text)
         nominal = int(nominal_str)
@@ -405,34 +408,35 @@ async def get_nominal(update: Update, context):
         context.user_data['nominal'] = nominal
         
     except (ValueError, TypeError):
-        # ... (error handling dan delete message untuk input salah) ...
+        # --- ERROR HANDLING: INPUT TIDAK VALID ---
+        
+        # Hapus pesan user yang salah menggunakan Workaround
+        await delete_message_with_workaround(context, chat_id, user_message_id, "pesan user salah")
+        
+        # Kirim pesan error baru
+        error_msg = await update.message.reply_text(
+            "Nominal tidak valid. Harap masukkan *Hanya Angka Positif* (tanpa titik/koma/Rp).",
+            parse_mode='Markdown'
+        )
+        context.user_data['error_message_id'] = error_msg.message_id
+        
         return GET_DESCRIPTION
 
     # --- Penghapusan (Hanya dijalankan jika validasi sukses) ---
 
-    # 2. Hapus pesan User (Input Nominal yang Valid)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=user_message_id) 
-        logging.info(f"Berhasil menghapus pesan user ID: {user_message_id}")
-    except Exception as e:
-        logging.warning(f"Gagal menghapus pesan user ID: {user_message_id}. Error: {e}")
-        pass
+    # 2. Hapus pesan User (Input Nominal yang Valid) menggunakan Workaround
+    await delete_message_with_workaround(context, chat_id, user_message_id, "pesan user valid")
 
-    # 3. Hapus pesan Bot Lama (Permintaan Nominal)
+    # 3. Hapus pesan Bot Lama (Permintaan Nominal) menggunakan Workaround
     bot_message_to_delete_id = context.user_data.pop('nominal_request_message_id', None)
-    if bot_message_to_delete_id:
-        try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=bot_message_to_delete_id)
-            logging.info(f"Berhasil menghapus pesan bot lama ID: {bot_message_to_delete_id}")
-        except Exception as e:
-            logging.warning(f"Gagal menghapus pesan bot lama ID: {bot_message_to_delete_id}. Error: {e}")
-            pass
+    await delete_message_with_workaround(context, chat_id, bot_message_to_delete_id, "pesan bot lama")
             
-    # --- Lanjutkan ke alur bot berikutnya ---
+    # --- Lanjutkan ke alur bot berikutnya (Validasi Sukses) ---
     
-    # 4. AMBIL VARIABEL (sudah aman)
+    # 4. AMBIL VARIABEL & KIRIM PERMINTAAN KETERANGAN
     kategori_nama = context.user_data.get('kategori_nama', 'Kategori Tidak Ditemukan')
     
+    # Memastikan format_nominal telah didefinisikan di tempat lain
     text = f"Nominal: *Rp {format_nominal(nominal)}* berhasil dicatat sebagai *{kategori_nama}*.\n\n"
     text += "Sekarang, tambahkan *Keterangan* dari transaksi tersebut (misalnya, 'Bubur Ayam', 'Bayar Air PDAM'):"
     
@@ -441,7 +445,7 @@ async def get_nominal(update: Update, context):
         reply_markup=get_menu_kembali('kembali_nominal'), 
         parse_mode='Markdown'
     )
-    context.user_data['description_request_message_id'] = sent_message.message_id 
+    context.user_data['description_request_message_id'] = sent_message.message_id
     
     return PREVIEW
 async def get_description(update: Update, context):
@@ -843,6 +847,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
