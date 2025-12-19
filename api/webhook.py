@@ -241,7 +241,7 @@ async def cancel(update: Update, context):
         # Kirim pesan konfirmasi
         confirmation_message = await context.bot.send_message(
             chat_id=chat_id,
-            text="✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
+            text="✅ *Pencatatan dibatalkan.* Silakan gunakan /start untuk memulai lagi.",
             parse_mode='Markdown'
         )
         # Ambil ID untuk disimpan secara temporer
@@ -254,7 +254,7 @@ async def cancel(update: Update, context):
             
             # Edit pesan tombol
             await query.edit_message_text(
-                "✅ *Pencatatan dibatalkan.* Data lama telah dibersihkan. Silakan gunakan /start untuk memulai lagi.",
+                "✅ *Pencatatan dibatalkan.* Silakan gunakan /start untuk memulai lagi.",
                 parse_mode='Markdown'
             )
             # Ambil ID untuk disimpan secara temporer (ID pesan yang di-edit)
@@ -760,6 +760,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
