@@ -41,8 +41,8 @@ KATEGORI_KELUAR = {
     'Hewan': 'keluar_hewan', 'Hiburan': 'keluar_hiburan', 'Investasi': 'keluar_investasi',
     'Kendaraan': 'keluar_kendaraan', 'Kesehatan': 'keluar_kesehatan', 'Langganan': 'keluar_langganan',
     'Makan': 'keluar_makan', 'Pajak': 'keluar_pajak', 'Pakaian': 'keluar_pakaian',
-    'Pendidikan': 'keluar_pendidikan', 'Perawatan': 'keluar_perawatan',
-    'Rumah Tangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Lainnya': 'keluar_lainnya'
+    'Pendidikan': 'keluar_pendidikan', 'Perawatan': 'keluar_perawatan', 'Perbaikan': 'keluar_perbaikan',
+    'Rumah': 'keluar_rumah', 'Rumah Tangga': 'keluar_rumahtangga', 'Tabungan': 'keluar_tabungan', 'Admin': 'keluar_admin', 'Lainnya': 'keluar_lainnya'
 }
 
 # --- FUNGSI UTILITY KRITIS (Workaround Event Loop) ---
@@ -760,6 +760,7 @@ def flask_webhook_handler():
         
         logging.error(f"Error saat memproses Update: {e}")
         return 'Internal Server Error', 500
+
 
 
 
